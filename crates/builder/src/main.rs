@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use cargo_metadata::MetadataCommand;
-use git2::{Commit, Oid, Repository, Sort};
+use git2::{Commit, Deltas, DiffDelta, DiffOptions, Oid, Repository, Sort};
 use std::collections::HashMap;
 use tracing::{error, info};
 
@@ -45,7 +45,21 @@ fn run() -> Result<()> {
     let mut changed_services: HashMap<Commit, Vec<String>> = HashMap::new();
     for commit in &commits {
         // find the files changed for this commit
-        commit.p
+        // NOTE: We just handle a single parent for now
+        let parent_commit = commit.parent(0).context("get first parent")?;
+
+        // get diff between the commit and its parent
+        let cur_tree = commit.tree().context("get tree for current commit")?;
+        let parent_tree = parent_commit.tree().context("get tree for parent commit")?;
+        let diff = repo
+            .diff_tree_to_tree(
+                Some(&cur_tree),
+                Some(&parent_tree),
+                Some(&mut DiffOptions::default()),
+            )
+            .context("get diff between old and new tree")?;
+        let deltas: Vec<DiffDelta> = diff.deltas().collect();
+        info!("Diff for {commit:?}..{parent_commit:?} is {deltas:?}");
     }
 
     // suggest a list of version bumps for each service changed
