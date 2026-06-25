@@ -1,7 +1,11 @@
-use anyhow::{Context, Result};
-use cargo_metadata::MetadataCommand;
-use git2::{Commit, Deltas, DiffDelta, DiffOptions, Oid, Repository, Sort};
-use std::collections::HashMap;
+use anyhow::{Context, Error, Result};
+use cargo_metadata::{MetadataCommand, semver::Version};
+use git2::{Commit, DiffOptions, Oid, Repository, Sort};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    path::{Path, PathBuf},
+};
 use tracing::{error, info};
 
 fn main() {
@@ -13,11 +17,134 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    let cleaned_members = get_cleaned_members().context("get cleaned members")?;
+
     let repo: Repository = Repository::init(".").context("open repo")?;
 
-    // get the head of the current branch
-    let head = repo.head().context("get head of repo")?;
+    let commits = get_commits(&repo).context("get commits")?;
 
+    let changed_crates = get_changed_crates_with_commits(&repo, &commits, &cleaned_members)
+        .context("get changed crates")?;
+
+    for ccrate in changed_crates {
+        // suggest a list of version bumps for each service changed
+        let cur_ver = ccrate.0.version;
+        let options: (Version, Version, Version) = (
+            cur_ver.bump_patch(),
+            cur_ver.bump_minor(),
+            cur_ver.bump_major(),
+        );
+
+        // allow the user to override the version bump for each service
+        print!(
+            "updating {}\nselect one: \n0) bump patch to {}\n1) bump minor to {}\n2) bump major to {}\n> ",
+            ccrate.0.name, options.0, options.1, options.2
+        );
+        std::io::stdout().flush().context("flush stdout")?;
+        let mut s: String = String::new();
+        let _ = std::io::stdin()
+            .read_line(&mut s)
+            .context("read choice from user")?;
+        let s = s.replace("\n", "");
+        let s = s.parse::<usize>().context("parse selection")?;
+
+        let selected = match s {
+            0 => options.0,
+            1 => options.1,
+            2 => options.2,
+            _ => return Err(Error::msg("Not a valid selection")),
+        };
+        info!("User selected: {}", selected);
+
+        // create a backup of the current Cargo.toml
+
+        // update the current one in place, with the bumped version
+
+        // generate the changelog entry using git cliff,
+        // git cliff --tag <tag> commit_start..commit_end
+    }
+
+    // commit the changelog and version bumps
+
+    // push to the remote
+
+    // open PR
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct Crate {
+    name: String,
+    version: MyVersion,
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct MyVersion {
+    version: Version,
+}
+
+impl MyVersion {
+    fn bump_patch(&self) -> Version {
+        let mut new = self.version.clone();
+        new.patch = new.patch + 1;
+        new
+    }
+
+    fn bump_minor(&self) -> Version {
+        let mut new = self.version.clone();
+        new.minor = new.minor + 1;
+        new
+    }
+
+    fn bump_major(&self) -> Version {
+        let mut new = self.version.clone();
+        new.major = new.major + 1;
+        new
+    }
+}
+
+fn get_cleaned_members() -> Result<Vec<Crate>> {
+    // get the list of crates in this worktree
+    let metadata = MetadataCommand::new().exec().unwrap();
+    let members = metadata.workspace_members;
+    let packages = metadata.packages;
+    info!("Members: {members:?}");
+
+    let pwd: PathBuf = std::env::current_dir().context("get current dir")?.into();
+    info!("current dir: {pwd:?}");
+
+    // clean up the members
+    let cleaned_members: Vec<Crate> = members
+        .iter()
+        .map(|s| {
+            let x: String = s
+                .repr
+                .replace("path+file://", "")
+                .replace(&format!("{}/", pwd.to_str().unwrap()), "")
+                .split("#")
+                .next()
+                .unwrap()
+                .to_string();
+
+            let v = packages
+                .iter()
+                .find(|p| p.id == *s)
+                .unwrap()
+                .version
+                .clone();
+            Crate {
+                name: x,
+                version: MyVersion { version: v },
+            }
+        })
+        .collect();
+
+    info!("cleaned members: {cleaned_members:?}");
+    Ok(cleaned_members)
+}
+
+fn get_commits(repo: &Repository) -> Result<Vec<Commit<'_>>> {
     // find the list of commits present locally but not origin/master
     let mut revwalk = repo.revwalk().context("create revwalk")?;
 
@@ -34,16 +161,18 @@ fn run() -> Result<()> {
     let commits = commits.context("get commits from oids")?;
 
     info!("Commits: {commits:?}");
+    Ok(commits)
+}
 
-    // get the list of crates in this worktree
-    let metadata = MetadataCommand::new().exec().unwrap();
-    let members = metadata.workspace_members;
-    info!("Members: {members:?}");
-
+fn get_changed_crates_with_commits<'a>(
+    repo: &'a Repository,
+    commits: &'a [Commit],
+    crates: &[Crate],
+) -> Result<HashMap<Crate, Vec<Commit<'a>>>> {
     // get the list of updated services for each commit
     // to do this, we'll walk each commit, and check which services changed
-    let mut changed_services: HashMap<Commit, Vec<String>> = HashMap::new();
-    for commit in &commits {
+    let mut changed_crates: HashMap<Crate, Vec<Commit>> = HashMap::new();
+    for commit in commits {
         // find the files changed for this commit
         // NOTE: We just handle a single parent for now
         let parent_commit = commit.parent(0).context("get first parent")?;
@@ -58,21 +187,43 @@ fn run() -> Result<()> {
                 Some(&mut DiffOptions::default()),
             )
             .context("get diff between old and new tree")?;
-        let deltas: Vec<DiffDelta> = diff.deltas().collect();
-        info!("Diff for {commit:?}..{parent_commit:?} is {deltas:?}");
+
+        let files: HashSet<&Path> = diff
+            .deltas()
+            .flat_map(|d| [d.new_file().path().unwrap(), d.old_file().path().unwrap()])
+            .collect();
+
+        info!("Changed files for {:?} is {files:?}", commit.id());
+
+        // find the crates that we actually changed with these files by cross referencing them to
+        // the workplace members
+        // we do that by removing the path up to and including the current dir for the packages, to
+        // match how git sees it.
+
+        for file in files {
+            for cratem in crates {
+                if file.starts_with(&cratem.name) {
+                    changed_crates
+                        .entry(cratem.clone())
+                        .or_insert(Vec::new())
+                        .push(commit.clone());
+                }
+            }
+        }
     }
 
-    // suggest a list of version bumps for each service changed
+    for (c_crate, commits) in &changed_crates {
+        info!("Crate {} changed from the following commits:", c_crate.name);
+        commits.iter().for_each(|c| {
+            info!(
+                "{}",
+                c.summary()
+                    .context("get summary for commit")
+                    .unwrap()
+                    .unwrap()
+            )
+        });
+    }
 
-    // allow the user to override the version bump for each service
-
-    // generate the changelog entry
-
-    // commit the changelog and version bumps
-
-    // push to the remote
-
-    // open PR
-
-    Ok(())
+    Ok(changed_crates)
 }
