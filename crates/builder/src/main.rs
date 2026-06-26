@@ -1,6 +1,6 @@
 use anyhow::{Context, Error, Result};
 use cargo_metadata::{MetadataCommand, semver::Version};
-use git2::{Commit, DiffOptions, IndexAddOption, Oid, Repository, Signature, Sort};
+use git2::{Commit, DiffOptions, IndexAddOption, Oid, Repository, Sort};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
@@ -91,7 +91,7 @@ fn run() -> Result<()> {
             }
             Err(e) => {
                 // move the backup to the OG location
-                let res = Command::new("mv")
+                let _res = Command::new("mv")
                     .args(&[&tmp_file, &real_file])
                     .spawn()
                     .context("spawn child to restore backup")?
