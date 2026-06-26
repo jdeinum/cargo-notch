@@ -28,133 +28,13 @@ fn run() -> Result<()> {
         .context("get changed crates")?;
 
     for ccrate in changed_crates {
-        // suggest a list of version bumps for each service changed
-        let cur_ver = ccrate.0.version;
-        let options: (Version, Version, Version) = (
-            cur_ver.bump_patch(),
-            cur_ver.bump_minor(),
-            cur_ver.bump_major(),
-        );
-
-        // allow the user to override the version bump for each service
-        print!(
-            "updating {}\nselect one: \n0) bump patch to {}\n1) bump minor to {}\n2) bump major to {}\n> ",
-            ccrate.0.name, options.0, options.1, options.2
-        );
-        std::io::stdout().flush().context("flush stdout")?;
-        let mut s: String = String::new();
-        let _ = std::io::stdin()
-            .read_line(&mut s)
-            .context("read choice from user")?;
-        let s = s.replace('\n', "");
-        let s = s.parse::<usize>().context("parse selection")?;
-
-        let selected = match s {
-            0 => options.0,
-            1 => options.1,
-            2 => options.2,
-            _ => return Err(Error::msg("Not a valid selection")),
-        };
-        info!("User selected: {}", selected);
-
-        // create a backup of the current Cargo.toml
-        let real_file = format!("{}/Cargo.toml", ccrate.0.name);
-        let tmp_file = format!("{}/Cargo.toml.bak", ccrate.0.name);
-
-        let res = Command::new("cp")
-            .args([&real_file, &tmp_file])
-            .spawn()
-            .context("spawn child to copy cargo.toml")?
-            .wait()
-            .context("wait for child")?;
-
-        if !res.success() {
-            return Err(Error::msg("Copy cargo.toml did not succeed"));
-        }
-
-        // update the current one in place, with the bumped version
-        // cowboying this for now
-        // TODO: Use a proper crate for updating this
-        // NOTE: If you have a dep with this version before the package version, ur cooked
-        let s = std::fs::read_to_string(&real_file).context("read Cargo.toml")?;
-        let s = s.replacen(
-            &format!("version = \"{}\"", cur_ver.version),
-            &format!("version = \"{selected}\""),
-            1,
-        );
-
-        // write it back
-        match std::fs::write(&real_file, s).context("write updated back") {
-            Ok(()) => {
-                // delete the temp file
-                std::fs::remove_file(tmp_file).context("delete temp file")?;
-            }
-            Err(e) => {
-                // move the backup to the OG location
-                let _res = Command::new("mv")
-                    .args([&tmp_file, &real_file])
-                    .spawn()
-                    .context("spawn child to restore backup")?
-                    .wait()
-                    .context("wait for child")?;
-                // TODO: Do we even check the status here?
-                return Err(e);
-            }
-        }
-
-        // generate the changelog entry using git cliff,
-        // git cliff --tag <tag> commit_start..commit_end
-        let _res = Command::new("git")
-            .args([
-                "cliff",
-                "--tag",
-                &selected.to_string(),
-                "--prepend",
-                &format!("{}/CHANGELOG.md", ccrate.0.name),
-                &"origin/master..HEAD".to_string(),
-            ])
-            .output()
-            .context("spawn child to run git cliff")?;
+        update_package(&ccrate.0).context("Update package")?;
     }
 
     // cargo generate-lockfile so we update everything we need
+    generate_lockfile().context("generate new lockfile")?;
 
-    let res = Command::new("cargo")
-        .args(["generate-lockfile"])
-        .spawn()
-        .context("spawn child to copy cargo.toml")?
-        .wait()
-        .context("wait for child")?;
-
-    if !res.success() {
-        return Err(Error::msg("cargo generate-lockfile did not succeed"));
-    }
-
-    // commit the changelog and version bumps
-    let mut index = repo.index().context("get index for repo")?;
-    index
-        .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
-        .context("add all files to the index")?;
-    index.write().context("write index to disk")?;
-    let sig = repo.signature().context("get stored user details")?;
-    let tree = repo
-        .find_tree(index.write_tree().context("write tree for index")?)
-        .context("find tree")?;
-    let parent = repo
-        .head()
-        .context("get head of branch")?
-        .peel_to_commit()
-        .context("convert ref commit")?;
-
-    repo.commit(
-        Some("HEAD"),
-        &sig,
-        &sig,
-        "chore: changelog + version bump",
-        &tree,
-        &[&parent],
-    )
-    .context("create the commit")?;
+    commit_changes(&repo).context("commit changes to the repo")?;
 
     // push to the remote
     // requires we have access to the SSH agent on our system, not quite sure how to do that yet
@@ -305,7 +185,7 @@ fn get_changed_crates_with_commits<'a>(
 
     for (c_crate, commits) in &changed_crates {
         info!("Crate {} changed from the following commits:", c_crate.name);
-        commits.iter().for_each(|c| {
+        for c in commits {
             info!(
                 "{}",
                 c.summary()
@@ -313,8 +193,155 @@ fn get_changed_crates_with_commits<'a>(
                     .unwrap()
                     .unwrap()
             );
-        });
+        }
     }
 
     Ok(changed_crates)
+}
+
+fn commit_changes(repo: &Repository) -> Result<()> {
+    // commit the changelog and version bumps
+    let mut index = repo.index().context("get index for repo")?;
+    index
+        .add_all(std::iter::once(&"."), IndexAddOption::DEFAULT, None)
+        .context("add all files to the index")?;
+    index.write().context("write index to disk")?;
+    let sig = repo.signature().context("get stored user details")?;
+    let tree = repo
+        .find_tree(index.write_tree().context("write tree for index")?)
+        .context("find tree")?;
+    let parent = repo
+        .head()
+        .context("get head of branch")?
+        .peel_to_commit()
+        .context("convert ref commit")?;
+
+    repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        "chore: changelog + version bump",
+        &tree,
+        &[&parent],
+    )
+    .context("create the commit")?;
+
+    Ok(())
+}
+
+fn generate_lockfile() -> Result<()> {
+    let res = Command::new("cargo")
+        .args(["generate-lockfile"])
+        .spawn()
+        .context("spawn child to copy cargo.toml")?
+        .wait()
+        .context("wait for child")?;
+
+    if !res.success() {
+        return Err(Error::msg("cargo generate-lockfile did not succeed"));
+    }
+    Ok(())
+}
+
+fn generate_changelog(tag: &str, crate_name: &str) -> Result<()> {
+    let res = Command::new("git")
+        .args([
+            "cliff",
+            "--tag",
+            tag,
+            "--prepend",
+            &format!("{crate_name}/CHANGELOG.md"),
+            "origin/master..HEAD",
+        ])
+        .spawn()
+        .context("spawn child to run git cliff")?
+        .wait()
+        .context("wait for child to run git cliff")?;
+
+    if !res.success() {
+        return Err(Error::msg("cargo generate-lockfile did not succeed"));
+    }
+
+    Ok(())
+}
+
+fn update_package(ccrate: &Crate) -> Result<()> {
+    // suggest a list of version bumps for each service changed
+    let cur_ver = &ccrate.version;
+    let options: (Version, Version, Version) = (
+        cur_ver.bump_patch(),
+        cur_ver.bump_minor(),
+        cur_ver.bump_major(),
+    );
+
+    // allow the user to override the version bump for each service
+    print!(
+        "updating {}\nselect one: \n0) bump patch to {}\n1) bump minor to {}\n2) bump major to {}\n> ",
+        ccrate.name, options.0, options.1, options.2
+    );
+    std::io::stdout().flush().context("flush stdout")?;
+    let mut s: String = String::new();
+    let _ = std::io::stdin()
+        .read_line(&mut s)
+        .context("read choice from user")?;
+    let s = s.replace('\n', "");
+    let s = s.parse::<usize>().context("parse selection")?;
+
+    let selected = match s {
+        0 => options.0,
+        1 => options.1,
+        2 => options.2,
+        _ => return Err(Error::msg("Not a valid selection")),
+    };
+    info!("User selected: {}", selected);
+
+    // create a backup of the current Cargo.toml
+    let real_file = format!("{}/Cargo.toml", ccrate.name);
+    let tmp_file = format!("{}/Cargo.toml.bak", ccrate.name);
+
+    let res = Command::new("cp")
+        .args([&real_file, &tmp_file])
+        .spawn()
+        .context("spawn child to copy cargo.toml")?
+        .wait()
+        .context("wait for child")?;
+
+    if !res.success() {
+        return Err(Error::msg("Copy cargo.toml did not succeed"));
+    }
+
+    // update the current one in place, with the bumped version
+    // cowboying this for now
+    // TODO: Use a proper crate for updating this
+    // NOTE: If you have a dep with this version before the package version, ur cooked
+    let s = std::fs::read_to_string(&real_file).context("read Cargo.toml")?;
+    let s = s.replacen(
+        &format!("version = \"{}\"", cur_ver.version),
+        &format!("version = \"{selected}\""),
+        1,
+    );
+
+    // write it back
+    match std::fs::write(&real_file, s).context("write updated back") {
+        Ok(()) => {
+            // delete the temp file
+            std::fs::remove_file(tmp_file).context("delete temp file")?;
+        }
+        Err(e) => {
+            // move the backup to the OG location
+            let _res = Command::new("mv")
+                .args([&tmp_file, &real_file])
+                .spawn()
+                .context("spawn child to restore backup")?
+                .wait()
+                .context("wait for child")?;
+            // TODO: Do we even check the status here?
+            return Err(e);
+        }
+    }
+
+    // generate the changelog entry using git cliff,
+    generate_changelog(&selected.to_string(), &ccrate.name).context("generate changelog")?;
+
+    Ok(())
 }

@@ -1,3 +1,9 @@
+## [0.1.11] - 2026-06-26
+
+### 🐛 Bug Fixes
+
+- Actually use clippy
+- Clippy fixes
 ## [0.1.10] - 2026-06-26
 
 ### 🚀 Features
