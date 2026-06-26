@@ -1,10 +1,11 @@
 use anyhow::{Context, Error, Result};
 use cargo_metadata::{MetadataCommand, semver::Version};
-use git2::{Commit, DiffOptions, Oid, Repository, Sort};
+use git2::{Commit, DiffOptions, IndexAddOption, Oid, Repository, Signature, Sort};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
 };
 use tracing::{error, info};
 
@@ -57,14 +58,89 @@ fn run() -> Result<()> {
         info!("User selected: {}", selected);
 
         // create a backup of the current Cargo.toml
+        let real_file = format!("{}/Cargo.toml", &ccrate.0.name);
+        let tmp_file = format!("{}/Cargo.toml.bak", &ccrate.0.name);
+
+        let res = Command::new("cp")
+            .args(&[&real_file, &tmp_file])
+            .spawn()
+            .context("spawn child to copy cargo.toml")?
+            .wait()
+            .context("wait for child")?;
+
+        if !res.success() {
+            return Err(Error::msg("Copy cargo.toml did not succeed"));
+        }
 
         // update the current one in place, with the bumped version
+        // cowboying this for now
+        // TODO: Use a proper crate for updating this
+        // NOTE: If you have a dep with this version before the package version, ur cooked
+        let s = std::fs::read_to_string(&real_file).context("read Cargo.toml")?;
+        let s = s.replacen(
+            &format!("version = \"{}\"", cur_ver.version.to_string()),
+            &format!("version = \"{selected}\""),
+            1,
+        );
+
+        // write it back
+        match std::fs::write(&real_file, s).context("write updated back") {
+            Ok(_) => {
+                // delete the temp file
+                std::fs::remove_file(tmp_file).context("delete temp file")?;
+            }
+            Err(e) => {
+                // move the backup to the OG location
+                let res = Command::new("mv")
+                    .args(&[&tmp_file, &real_file])
+                    .spawn()
+                    .context("spawn child to restore backup")?
+                    .wait()
+                    .context("wait for child")?;
+                // TODO: Do we even check the status here?
+                return Err(e);
+            }
+        }
 
         // generate the changelog entry using git cliff,
         // git cliff --tag <tag> commit_start..commit_end
+        let _res = Command::new("git")
+            .args([
+                "cliff",
+                "--tag",
+                &selected.to_string(),
+                "--prepend",
+                &format!("{}/CHANGELOG.md", &ccrate.0.name),
+                &format!("origin/master..HEAD"),
+            ])
+            .output()
+            .context("spawn child to run git cliff")?;
     }
 
     // commit the changelog and version bumps
+    let mut index = repo.index().context("get index for repo")?;
+    index
+        .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
+        .context("add all files to the index")?;
+    let sig = repo.signature().context("get stored user details")?;
+    let tree = repo
+        .find_tree(index.write_tree().context("write tree for index")?)
+        .context("find tree")?;
+    let parent = repo
+        .head()
+        .context("get head of branch")?
+        .peel_to_commit()
+        .context("convert ref commit")?;
+
+    repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        "chore: changelog + version bump",
+        &tree,
+        &[&parent],
+    )
+    .context("create the commit")?;
 
     // push to the remote
 
