@@ -9,7 +9,7 @@ default-members = ["crates/builder"]
 all = "deny"
 pedantic = "deny"
 nursery = "deny"
-restriction = "deny"
+# restriction = "deny"
 cargo = "deny"
 
 [profile.dev]

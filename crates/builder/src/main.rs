@@ -12,9 +12,9 @@ use tracing::{error, info};
 fn main() {
     tracing_subscriber::fmt::init();
     match run() {
-        Ok(_) => {}
+        Ok(()) => {}
         Err(e) => error!("Error running the build tool: {e:?}"),
-    };
+    }
 }
 
 fn run() -> Result<()> {
@@ -46,7 +46,7 @@ fn run() -> Result<()> {
         let _ = std::io::stdin()
             .read_line(&mut s)
             .context("read choice from user")?;
-        let s = s.replace("\n", "");
+        let s = s.replace('\n', "");
         let s = s.parse::<usize>().context("parse selection")?;
 
         let selected = match s {
@@ -58,11 +58,11 @@ fn run() -> Result<()> {
         info!("User selected: {}", selected);
 
         // create a backup of the current Cargo.toml
-        let real_file = format!("{}/Cargo.toml", &ccrate.0.name);
-        let tmp_file = format!("{}/Cargo.toml.bak", &ccrate.0.name);
+        let real_file = format!("{}/Cargo.toml", ccrate.0.name);
+        let tmp_file = format!("{}/Cargo.toml.bak", ccrate.0.name);
 
         let res = Command::new("cp")
-            .args(&[&real_file, &tmp_file])
+            .args([&real_file, &tmp_file])
             .spawn()
             .context("spawn child to copy cargo.toml")?
             .wait()
@@ -78,21 +78,21 @@ fn run() -> Result<()> {
         // NOTE: If you have a dep with this version before the package version, ur cooked
         let s = std::fs::read_to_string(&real_file).context("read Cargo.toml")?;
         let s = s.replacen(
-            &format!("version = \"{}\"", cur_ver.version.to_string()),
+            &format!("version = \"{}\"", cur_ver.version),
             &format!("version = \"{selected}\""),
             1,
         );
 
         // write it back
         match std::fs::write(&real_file, s).context("write updated back") {
-            Ok(_) => {
+            Ok(()) => {
                 // delete the temp file
                 std::fs::remove_file(tmp_file).context("delete temp file")?;
             }
             Err(e) => {
                 // move the backup to the OG location
                 let _res = Command::new("mv")
-                    .args(&[&tmp_file, &real_file])
+                    .args([&tmp_file, &real_file])
                     .spawn()
                     .context("spawn child to restore backup")?
                     .wait()
@@ -110,8 +110,8 @@ fn run() -> Result<()> {
                 "--tag",
                 &selected.to_string(),
                 "--prepend",
-                &format!("{}/CHANGELOG.md", &ccrate.0.name),
-                &format!("origin/master..HEAD"),
+                &format!("{}/CHANGELOG.md", ccrate.0.name),
+                &"origin/master..HEAD".to_string(),
             ])
             .output()
             .context("spawn child to run git cliff")?;
@@ -120,7 +120,7 @@ fn run() -> Result<()> {
     // cargo generate-lockfile so we update everything we need
 
     let res = Command::new("cargo")
-        .args(&["generate-lockfile"])
+        .args(["generate-lockfile"])
         .spawn()
         .context("spawn child to copy cargo.toml")?
         .wait()
@@ -178,19 +178,19 @@ struct MyVersion {
 impl MyVersion {
     fn bump_patch(&self) -> Version {
         let mut new = self.version.clone();
-        new.patch = new.patch + 1;
+        new.patch += 1;
         new
     }
 
     fn bump_minor(&self) -> Version {
         let mut new = self.version.clone();
-        new.minor = new.minor + 1;
+        new.minor += 1;
         new
     }
 
     fn bump_major(&self) -> Version {
         let mut new = self.version.clone();
-        new.major = new.major + 1;
+        new.major += 1;
         new
     }
 }
@@ -202,7 +202,7 @@ fn get_cleaned_members() -> Result<Vec<Crate>> {
     let packages = metadata.packages;
     info!("Members: {members:?}");
 
-    let pwd: PathBuf = std::env::current_dir().context("get current dir")?.into();
+    let pwd: PathBuf = std::env::current_dir().context("get current dir")?;
     info!("current dir: {pwd:?}");
 
     // clean up the members
@@ -213,7 +213,7 @@ fn get_cleaned_members() -> Result<Vec<Crate>> {
                 .repr
                 .replace("path+file://", "")
                 .replace(&format!("{}/", pwd.to_str().unwrap()), "")
-                .split("#")
+                .split('#')
                 .next()
                 .unwrap()
                 .to_string();
@@ -240,12 +240,12 @@ fn get_commits(repo: &Repository) -> Result<Vec<Commit<'_>>> {
     let mut revwalk = repo.revwalk().context("create revwalk")?;
 
     // we want the last commit present on origin master so we can find what changed in our first commit
-    let commit_range = format!("origin/master..HEAD");
+    let commit_range = "origin/master..HEAD".to_string();
     revwalk
         .push_range(&commit_range)
         .context("revwalk commit range")?;
     revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::REVERSE)?;
-    let x: Result<Vec<Oid>, git2::Error> = revwalk.into_iter().collect();
+    let x: Result<Vec<Oid>, git2::Error> = revwalk.collect();
     let x = x.context("get oids")?;
     let commits: Result<Vec<Commit>, git2::Error> =
         x.iter().map(|c| repo.find_commit(*c)).collect();
@@ -296,7 +296,7 @@ fn get_changed_crates_with_commits<'a>(
                 if file.starts_with(&cratem.name) {
                     changed_crates
                         .entry(cratem.clone())
-                        .or_insert(Vec::new())
+                        .or_default()
                         .push(commit.clone());
                 }
             }
@@ -312,7 +312,7 @@ fn get_changed_crates_with_commits<'a>(
                     .context("get summary for commit")
                     .unwrap()
                     .unwrap()
-            )
+            );
         });
     }
 
