@@ -117,6 +117,19 @@ fn run() -> Result<()> {
             .context("spawn child to run git cliff")?;
     }
 
+    // cargo generate-lockfile so we update everything we need
+
+    let res = Command::new("cargo")
+        .args(&["generate-lockfile"])
+        .spawn()
+        .context("spawn child to copy cargo.toml")?
+        .wait()
+        .context("wait for child")?;
+
+    if !res.success() {
+        return Err(Error::msg("cargo generate-lockfile did not succeed"));
+    }
+
     // commit the changelog and version bumps
     let mut index = repo.index().context("get index for repo")?;
     index

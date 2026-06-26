@@ -1,3 +1,15 @@
+## [0.1.10] - 2026-06-26
+
+### 🚀 Features
+
+- Commit range done, changelog next
+
+### ⚙️ Miscellaneous Tasks
+
+- Syncing
+- Changelog + version bump
+- Changelog + version bump
+- Changelog + version bump
 ## [0.1.9] - 2026-06-26
 
 ### 🚀 Features
