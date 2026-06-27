@@ -41,7 +41,7 @@ fn run() -> Result<()> {
 
     // push to the remote
     // requires we have access to the SSH agent on our system, not quite sure how to do that yet
-    push_current_branch(&repo).context("push current branch")?;
+    // push_current_branch(&repo).context("push current branch")?;
 
     // open PR to origin master with auto merge and stuff
     // open_pr("jdeinum", "repo", "a branch", "master", "a token")
