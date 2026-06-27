@@ -1,6 +1,9 @@
 use anyhow::{Context, Error, Result};
 use cargo_metadata::{MetadataCommand, semver::Version};
-use git2::{Commit, DiffOptions, IndexAddOption, Oid, Repository, Sort};
+use git2::{
+    Commit, Cred, DiffOptions, IndexAddOption, Oid, PushOptions, RemoteCallbacks, Repository, Sort,
+};
+use octocrab::Octocrab;
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
@@ -18,6 +21,9 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    // Get the GITHUB_TOKEN for opening the PR
+    let pat = std::env::var("GITHUB_TOKEN").context("get github pat")?;
+
     let cleaned_members = get_cleaned_members().context("get cleaned members")?;
 
     let repo: Repository = Repository::init(".").context("open repo")?;
@@ -38,8 +44,15 @@ fn run() -> Result<()> {
 
     // push to the remote
     // requires we have access to the SSH agent on our system, not quite sure how to do that yet
+    push_current_branch(&repo).context("push current branch")?;
 
-    // open PR to origin master with auto merge and stuff
+    // open the PR
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("spawn runtime")?;
+    rt.block_on(open_pr("jdeinum", &repo, &pat))
+        .context("open PR on runtime")?;
 
     Ok(())
 }
@@ -343,5 +356,66 @@ fn update_package(ccrate: &Crate) -> Result<()> {
     // generate the changelog entry using git cliff,
     generate_changelog(&selected.to_string(), &ccrate.name).context("generate changelog")?;
 
+    Ok(())
+}
+
+fn push_current_branch(repo: &Repository) -> Result<()> {
+    let head = repo.head().context("get head")?;
+    let branch = head.name().context("get head name")?;
+
+    let mut remote = repo
+        .find_remote("origin")
+        .context("get remote for origin")?;
+
+    info!("Found remote origin");
+
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(|_url, username, _allowed| {
+        Cred::ssh_key_from_agent(username.unwrap_or("git"))
+    });
+
+    let mut opts = PushOptions::new();
+    opts.remote_callbacks(callbacks);
+
+    // refspec: local:remote
+    let refspec = format!("{branch}:{branch}");
+    remote.push(&[&refspec], Some(&mut opts))?;
+
+    Ok(())
+}
+
+async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
+    let head = repo.head().context("get branch head")?;
+    let branch = git2::Branch::wrap(head);
+    let name = branch
+        .name()
+        .context("get local name")?
+        .ok_or(Error::msg("No branch name"))?;
+
+    let upstream = branch.upstream().context("get upstream branch")?;
+    let upstream_branch_name = upstream
+        .name()
+        .context("get branch name")?
+        .ok_or(Error::msg("No branch name"))?;
+    info!("Creating PR from {upstream_branch_name} into master");
+
+    let octocrab = Octocrab::builder()
+        .personal_token(token)
+        .build()
+        .context("build octocrab")?;
+
+    let pr = octocrab
+        .pulls(username, "builder")
+        .create("Chore: release", name, "master")
+        .body("A release!")
+        .send()
+        .await
+        .context("create PR")?;
+
+    println!(
+        "Opened PR #{}: {}",
+        pr.number.unwrap(),
+        pr.html_url.unwrap()
+    );
     Ok(())
 }
