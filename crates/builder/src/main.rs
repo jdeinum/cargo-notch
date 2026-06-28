@@ -360,6 +360,8 @@ fn push_current_branch(repo: &Repository) -> Result<()> {
         .find_remote("origin")
         .context("get remote for origin")?;
 
+    info!("Found remote origin");
+
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(|_url, username, _allowed| {
         Cred::ssh_key_from_agent(username.unwrap_or("git"))
