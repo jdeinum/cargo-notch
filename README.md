@@ -6,9 +6,21 @@ interface that allows you to version your new releases, generate a
 [changelog](https://git-cliff.org/), open a PR, and create a git tags for new
 releases.
 
+If you have ideas, please create an issue!
+
 ## Roadmap
 
 NOTE: I am still working on the alpha, please do not use this yet!
+
+✅ Initial prototype - [`39d5eea`](https://github.com/jdeinum/notch/commit/39d5eea1943a79ad88419e876f41917d15ed906f)
+☑️ Github action that creates tags from merged PRs matching specs
+☑️ CI/CD stuff
+☑️ Move hardcoded stuff to TOML config
+☑️ Working CLI
+☑️ Working TUI
+☑️ Release v1.0.0
+☑️ Auto versioning option
+☑️ Auto merge option
 
 ## Example
 

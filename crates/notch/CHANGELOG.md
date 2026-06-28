@@ -1,3 +1,12 @@
+## [0.1.3] - 2026-06-28
+
+### 🐛 Bug Fixes
+
+- Update builder to notch in code
+
+### 📚 Documentation
+
+- Update README enough to understand what it does
 ## [0.1.2] - 2026-06-28
 
 ### 🚀 Features

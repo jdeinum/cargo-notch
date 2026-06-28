@@ -405,7 +405,7 @@ async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
         .context("build octocrab")?;
 
     let pr = octocrab
-        .pulls(username, "builder")
+        .pulls(username, "notch")
         .create("Chore: release", name, "master")
         .body("A release!")
         .send()
