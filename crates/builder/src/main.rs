@@ -392,6 +392,7 @@ async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
         .name()
         .context("get branch name")?
         .ok_or(Error::msg("No branch name"))?;
+    info!("Creating PR from {upstream_branch_name} into master");
 
     let octocrab = Octocrab::builder()
         .personal_token(token)
@@ -400,7 +401,7 @@ async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
 
     let pr = octocrab
         .pulls(username, "builder")
-        .create("Chore: merging", upstream_branch_name, "master")
+        .create("Chore: release", upstream_branch_name, "master")
         .body("A release!")
         .send()
         .await
