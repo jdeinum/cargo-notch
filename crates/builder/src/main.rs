@@ -21,6 +21,9 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    // Get the GITHUB_TOKEN for opening the PR
+    let pat = std::env::var("GITHUB_TOKEN").context("get github pat")?;
+
     let cleaned_members = get_cleaned_members().context("get cleaned members")?;
 
     let repo: Repository = Repository::init(".").context("open repo")?;
@@ -43,9 +46,13 @@ fn run() -> Result<()> {
     // requires we have access to the SSH agent on our system, not quite sure how to do that yet
     push_current_branch(&repo).context("push current branch")?;
 
-    // open PR to origin master with auto merge and stuff
-    // open_pr("jdeinum", "repo", "a branch", "master", "a token")
-    // don't think I can do this with git2, need to do this with octocrab
+    // open the PR
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("spawn runtime")?;
+    rt.block_on(open_pr("jdeinum", &repo, &pat))
+        .context("open PR on runtime")?;
 
     Ok(())
 }
@@ -377,21 +384,23 @@ fn push_current_branch(repo: &Repository) -> Result<()> {
     Ok(())
 }
 
-async fn open_pr(
-    username: &str,
-    repo: &str,
-    source_branch: &str,
-    target_branch: &str,
-    token: &str,
-) -> Result<()> {
+async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
+    let head = repo.head().context("get branch head")?;
+    let branch = git2::Branch::wrap(head);
+    let upstream = branch.upstream().context("get upstream branch")?;
+    let upstream_branch_name = upstream
+        .name()
+        .context("get branch name")?
+        .ok_or(Error::msg("No branch name"))?;
+
     let octocrab = Octocrab::builder()
         .personal_token(token)
         .build()
         .context("build octocrab")?;
 
     let pr = octocrab
-        .pulls(username, repo)
-        .create("Chore: merging", source_branch, target_branch)
+        .pulls(username, "builder")
+        .create("Chore: merging", upstream_branch_name, "master")
         .body("A release!")
         .send()
         .await

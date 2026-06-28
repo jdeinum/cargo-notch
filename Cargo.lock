@@ -84,12 +84,13 @@ dependencies = [
 
 [[package]]
 name = "builder"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "cargo_metadata",
  "git2",
  "octocrab",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
