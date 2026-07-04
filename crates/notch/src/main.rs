@@ -40,6 +40,7 @@ fn run() -> Result<()> {
     // cargo generate-lockfile so we update everything we need
     generate_lockfile().context("generate new lockfile")?;
 
+    // commit changes
     commit_changes(&repo).context("commit changes to the repo")?;
 
     // push to the remote
