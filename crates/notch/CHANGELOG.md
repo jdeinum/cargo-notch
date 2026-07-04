@@ -1,3 +1,8 @@
+## [0.1.4] - 2026-07-04
+
+### 📚 Documentation
+
+- Add comment for demo
 ## [0.1.3] - 2026-06-28
 
 ### 🐛 Bug Fixes
