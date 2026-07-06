@@ -1,3 +1,12 @@
+## [0.1.9] - 2026-07-06
+
+### 🐛 Bug Fixes
+
+- Remove path from package name
+
+### ⚙️ Miscellaneous Tasks
+
+- Clippy fixes
 ## [0.1.8] - 2026-07-06
 
 ### 🐛 Bug Fixes
