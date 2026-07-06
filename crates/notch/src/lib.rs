@@ -20,7 +20,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Bump versions, update changelogs, and open a release PR for changed crates
-    Pr,
+    Pr {
+        /// GitHub token used to push the branch and open the PR
+        #[arg(short, long)]
+        token: String,
+    },
 
     /// Tag crates whose version changed between two commits
     Tag {
@@ -42,7 +46,7 @@ enum Commands {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Pr => pr::run(),
+        Commands::Pr { token } => pr::run(&token),
         Commands::Tag { old, new } => tag::run(&old, &new),
     }
 }

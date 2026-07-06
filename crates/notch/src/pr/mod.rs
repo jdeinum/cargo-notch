@@ -14,10 +14,7 @@ use std::{
 };
 use tracing::info;
 
-pub fn run() -> Result<()> {
-    // Get the GITHUB_TOKEN for opening the PR
-    let pat = std::env::var("GITHUB_TOKEN").context("get github pat")?;
-
+pub fn run(token: &str) -> Result<()> {
     let pwd = std::env::current_dir().context("get current dir")?;
     let cleaned_members = get_cleaned_members(&pwd).context("get cleaned members")?;
 
@@ -47,7 +44,7 @@ pub fn run() -> Result<()> {
         .enable_all()
         .build()
         .context("spawn runtime")?;
-    rt.block_on(open_pr("jdeinum", &repo, &pat))
+    rt.block_on(open_pr("jdeinum", &repo, token))
         .context("open PR on runtime")?;
 
     Ok(())

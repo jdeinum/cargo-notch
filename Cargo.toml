@@ -15,3 +15,17 @@ multiple_crate_versions = "allow"
 
 [profile.dev]
 codegen-backend = "cranelift"
+
+# aws-lc-sys doesn't link correctly with cranelift — fall back to llvm for
+# the entire chain: aws-lc-sys, aws-lc-rs, rustls, and anything linking them
+[profile.dev.package.aws-lc-sys]
+codegen-backend = "llvm"
+
+[profile.dev.package.aws-lc-rs]
+codegen-backend = "llvm"
+
+[profile.dev.package.jsonwebtoken]
+codegen-backend = "llvm"
+
+[profile.dev.package.rustls]
+codegen-backend = "llvm"
