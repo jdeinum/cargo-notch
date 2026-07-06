@@ -52,7 +52,7 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
         let new_version = new_packages.get(package).cloned();
 
         if let Some(tag) = tag(old_version, new_version).context("get tag")? {
-            info!("creating tag {tag} for package");
+            info!("creating tag {tag} for package {package}");
         }
     }
 
