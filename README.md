@@ -3,7 +3,7 @@
 Notch is designed to be an ultra simple build tool that versions against a
 ground source branch for your repository. The goal is to provide a simple
 interface that allows you to version your new releases, generate a
-[changelog](https://git-cliff.org/), open a PR, and create a git tags for new
+[changelog](https://git-cliff.org/), open a PR, and create git tags for new
 releases.
 
 If you have ideas, please create an issue!
@@ -63,13 +63,13 @@ version of the software. This means following the [not rocket science
 rule](https://matklad.github.io/2024/03/22/basic-things.html#Not-Rocket-Science-Rule),
 which is often implemented through the following items:
 
-1. No direct push to your production branch, i.e PRs to update it
-2. PR branches required to be up to date to merch
-3. PR branches have status checks pass to merge (i.e fmt, tests, etc)
+1. No direct push to your production branch, i.e. PRs to update it
+2. PR branches required to be up to date to merge
+3. PR branches have status checks pass to merge (i.e. fmt, tests, etc)
 4. Disable force pushes
 5. Branch off of origin/master rather than local master
 
-Some other considerations is that notch does not strive to verify your public
+Some other considerations are that notch does not strive to verify your public
 API changes, nor does it automatically decide your next version, instead it
 shows you all of the commits included, grouped by type, and lets you decide.
 
@@ -93,4 +93,4 @@ See [CONFIGURATION.md](./CONFIGURATION.md)
 
 ## Changelog
 
-See [CHANGELOG.md](./crates/notch/CHANGELOG.md)
+See [CHANGELOG.md](./crates/cargo-notch/CHANGELOG.md)
