@@ -4,7 +4,7 @@ use anyhow::Context;
 use cargo_metadata::semver::Version;
 use git2::{BranchType, Repository, WorktreePruneOptions, build::CheckoutBuilder};
 use std::collections::{HashMap, HashSet};
-use tracing::debug;
+use tracing::info;
 
 // determine the tag to be created
 pub fn tag(old: Option<Version>, new: Option<Version>) -> Result<Option<Version>> {
@@ -58,7 +58,7 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
                 .next()
                 .ok_or_else(|| Error::msg("No package name"))?;
 
-            debug!("creating tag {tag} for package {package}");
+            info!("creating tag {tag} for package {package}");
             println!("{package_name}:{tag}");
         }
     }
