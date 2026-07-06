@@ -59,7 +59,7 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
                 .ok_or_else(|| Error::msg("No package name"))?;
 
             info!("creating tag {tag} for package {package}");
-            println!("{package_name}:{tag}");
+            println!("{package_name}-v{tag}");
         }
     }
 
