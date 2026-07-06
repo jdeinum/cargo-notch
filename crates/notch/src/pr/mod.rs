@@ -309,6 +309,9 @@ fn push_current_branch(repo: &Repository) -> Result<()> {
     Ok(())
 }
 
+// Runs only on a current-thread tokio runtime (see run()), so the future is
+// never sent across threads despite git2 types not being Send.
+#[allow(clippy::future_not_send)]
 async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
     let head = repo.head().context("get branch head")?;
     let branch = git2::Branch::wrap(head);
