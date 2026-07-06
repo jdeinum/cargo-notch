@@ -3,15 +3,17 @@ pub(crate) mod pr;
 pub(crate) mod tag;
 pub(crate) mod workspace;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use error::Result;
 
 #[derive(Parser)]
-#[command(
-    name = "notch",
-    version,
-    about = "Version and release automation for cargo workspaces"
-)]
+#[command(name = "cargo", bin_name = "cargo")]
+enum CargoCli {
+    #[command(version, about = "Version and release automation for cargo workspaces")]
+    Notch(Cli),
+}
+
+#[derive(Args)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -25,13 +27,11 @@ enum Commands {
         #[arg(short, long)]
         token: String,
     },
-
     /// Tag crates whose version changed between two commits
     Tag {
         /// Commit-ish to diff from (the previous release point)
         #[arg(long)]
         old: String,
-
         /// Commit-ish to diff to (the new release point)
         #[arg(long)]
         new: String,
@@ -44,7 +44,7 @@ enum Commands {
 ///
 /// Returns an error if the underlying `pr` or `tag` command fails.
 pub fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let CargoCli::Notch(cli) = CargoCli::parse();
     match cli.command {
         Commands::Pr { token } => pr::run(&token),
         Commands::Tag { old, new } => tag::run(&old, &new),
