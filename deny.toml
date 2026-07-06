@@ -1,0 +1,44 @@
+[advisories]
+unmaintained = "workspace"
+yanked = "deny"
+# rsa timing side-channel (Marvin Attack), pulled in transitively via
+# octocrab -> jsonwebtoken -> rsa for GitHub App JWT auth. No safe upgrade
+# is available upstream yet.
+ignore = ["RUSTSEC-2023-0071"]
+
+# Commercial-safe policy: permissive licenses + MPL-2.0 (file-level copyleft only).
+# Anything else (GPL/LGPL/AGPL/source-available) fails the check for manual review.
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "Unlicense",
+]
+confidence-threshold = 0.8
+# notch's own workspace crate carries no license field; it's not published to
+# crates.io yet, so skip it.
+private = { ignore = true }
+
+# Lock the supply chain to crates.io; any git/alt-registry dep must be added explicitly.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[bans]
+# Regression guard: fail when a NEW crate gets pulled in at multiple versions.
+# The skip list below is every crate already duplicated today (upstream-driven
+# and unavoidable). Prune entries as upstreams converge — once a crate drops
+# to a single version, remove it here so a future regression is caught.
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+skip = [
+    { crate = "getrandom" },
+    { crate = "windows-sys" },
+]

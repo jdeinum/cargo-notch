@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
+use crate::workspace::{Crate, get_cleaned_members};
 use anyhow::Context;
-use cargo_metadata::{MetadataCommand, semver::Version};
+use cargo_metadata::semver::Version;
 use git2::{
     Commit, Cred, DiffOptions, IndexAddOption, Oid, PushOptions, RemoteCallbacks, Repository, Sort,
 };
@@ -8,7 +9,7 @@ use octocrab::Octocrab;
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 use tracing::info;
@@ -17,7 +18,8 @@ pub fn run() -> Result<()> {
     // Get the GITHUB_TOKEN for opening the PR
     let pat = std::env::var("GITHUB_TOKEN").context("get github pat")?;
 
-    let cleaned_members = get_cleaned_members().context("get cleaned members")?;
+    let pwd = std::env::current_dir().context("get current dir")?;
+    let cleaned_members = get_cleaned_members(&pwd).context("get cleaned members")?;
 
     let repo: Repository = Repository::init(".").context("open repo")?;
 
@@ -49,77 +51,6 @@ pub fn run() -> Result<()> {
         .context("open PR on runtime")?;
 
     Ok(())
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct Crate {
-    name: String,
-    version: MyVersion,
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct MyVersion {
-    version: Version,
-}
-
-impl MyVersion {
-    fn bump_patch(&self) -> Version {
-        let mut new = self.version.clone();
-        new.patch += 1;
-        new
-    }
-
-    fn bump_minor(&self) -> Version {
-        let mut new = self.version.clone();
-        new.minor += 1;
-        new
-    }
-
-    fn bump_major(&self) -> Version {
-        let mut new = self.version.clone();
-        new.major += 1;
-        new
-    }
-}
-
-fn get_cleaned_members() -> Result<Vec<Crate>> {
-    // get the list of crates in this worktree
-    let metadata = MetadataCommand::new().exec().unwrap();
-    let members = metadata.workspace_members;
-    let packages = metadata.packages;
-    info!("Members: {members:?}");
-
-    let pwd: PathBuf = std::env::current_dir().context("get current dir")?;
-    info!("current dir: {pwd:?}");
-
-    // clean up the members
-    let cleaned_members: Vec<Crate> = members
-        .iter()
-        .map(|s| {
-            let x: String = s
-                .repr
-                .replace("path+file://", "")
-                .replace(&format!("{}/", pwd.to_str().unwrap()), "")
-                .split('#')
-                .next()
-                .unwrap()
-                .to_string();
-
-            let v = packages
-                .iter()
-                .find(|p| p.id == *s)
-                .unwrap()
-                .version
-                .clone();
-            Crate {
-                name: x,
-                version: MyVersion { version: v },
-            }
-        })
-        .collect();
-
-    info!("cleaned members: {cleaned_members:?}");
-    Ok(cleaned_members)
 }
 
 fn get_commits(repo: &Repository) -> Result<Vec<Commit<'_>>> {
@@ -384,13 +315,13 @@ async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
     let name = branch
         .name()
         .context("get local name")?
-        .ok_or(Error::msg("No branch name"))?;
+        .ok_or_else(|| Error::msg("No branch name"))?;
 
     let upstream = branch.upstream().context("get upstream branch")?;
     let upstream_branch_name = upstream
         .name()
         .context("get branch name")?
-        .ok_or(Error::msg("No branch name"))?;
+        .ok_or_else(|| Error::msg("No branch name"))?;
     info!("Creating PR from {upstream_branch_name} into master");
 
     let octocrab = Octocrab::builder()

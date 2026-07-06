@@ -1,13 +1,9 @@
 use crate::error::{Error, Result};
+use crate::workspace::{Crate, get_cleaned_members};
 use anyhow::Context;
-use cargo_metadata::{MetadataCommand, semver::Version};
+use cargo_metadata::semver::Version;
 use git2::{BranchType, Repository, WorktreePruneOptions, build::CheckoutBuilder};
-use serde::Deserialize;
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-    str::FromStr,
-};
+use std::collections::{HashMap, HashSet};
 use tracing::info;
 
 // determine the tag to be created
@@ -28,26 +24,16 @@ pub fn tag(old: Option<Version>, new: Option<Version>) -> Result<Option<Version>
     }
 }
 
-pub fn parse_version(v: &str) -> Result<Version> {
-    #[derive(Deserialize)]
-    pub struct Manifest {
-        version: String,
-    }
-    let x: Manifest = toml::from_str(v).context("parse manifest")?;
-    let version: Version = Version::from_str(&x.version).context("parse version")?;
-    Ok(version)
-}
-
-pub fn run(old_commit: String, new_commit: String) -> Result<()> {
+pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
     // get all of the packages from the old commit
-    let old_packages: HashMap<String, Version> = get_cleaned_members_in_commit(&old_commit)
+    let old_packages: HashMap<String, Version> = get_cleaned_members_in_commit(old_commit)
         .context("get crate members")?
         .iter()
         .map(|x| (x.name.clone(), x.version.version.clone()))
         .collect();
 
     // get all of the packages from the new commit
-    let new_packages: HashMap<String, Version> = get_cleaned_members_in_commit(&new_commit)
+    let new_packages: HashMap<String, Version> = get_cleaned_members_in_commit(new_commit)
         .context("get crate members")?
         .iter()
         .map(|x| (x.name.clone(), x.version.version.clone()))
@@ -71,77 +57,6 @@ pub fn run(old_commit: String, new_commit: String) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct Crate {
-    name: String,
-    version: MyVersion,
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct MyVersion {
-    version: Version,
-}
-
-impl MyVersion {
-    fn bump_patch(&self) -> Version {
-        let mut new = self.version.clone();
-        new.patch += 1;
-        new
-    }
-
-    fn bump_minor(&self) -> Version {
-        let mut new = self.version.clone();
-        new.minor += 1;
-        new
-    }
-
-    fn bump_major(&self) -> Version {
-        let mut new = self.version.clone();
-        new.major += 1;
-        new
-    }
-}
-
-fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
-    // get the list of crates in the workspace rooted at `dir`
-    let metadata = MetadataCommand::new()
-        .current_dir(dir)
-        .exec()
-        .context("run cargo metadata")?;
-    let members = metadata.workspace_members;
-    let packages = metadata.packages;
-    info!("Members: {members:?}");
-
-    // clean up the members
-    let cleaned_members: Vec<Crate> = members
-        .iter()
-        .map(|s| {
-            let x: String = s
-                .repr
-                .replace("path+file://", "")
-                .replace(&format!("{}/", dir.to_str().unwrap()), "")
-                .split('#')
-                .next()
-                .unwrap()
-                .to_string();
-
-            let v = packages
-                .iter()
-                .find(|p| p.id == *s)
-                .unwrap()
-                .version
-                .clone();
-            Crate {
-                name: x,
-                version: MyVersion { version: v },
-            }
-        })
-        .collect();
-
-    info!("cleaned members: {cleaned_members:?}");
-    Ok(cleaned_members)
 }
 
 // checks out `commit` into a throwaway worktree so we can read the workspace's

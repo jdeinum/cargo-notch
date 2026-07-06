@@ -1,12 +1,17 @@
 pub(crate) mod error;
 pub(crate) mod pr;
 pub(crate) mod tag;
+pub(crate) mod workspace;
 
 use clap::{Parser, Subcommand};
 use error::Result;
 
 #[derive(Parser)]
-#[command(name = "notch", version, about = "Version and release automation for cargo workspaces")]
+#[command(
+    name = "notch",
+    version,
+    about = "Version and release automation for cargo workspaces"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -38,6 +43,6 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Pr => pr::run(),
-        Commands::Tag { old, new } => tag::run(old, new),
+        Commands::Tag { old, new } => tag::run(&old, &new),
     }
 }
