@@ -1,10 +1,6 @@
 [advisories]
 unmaintained = "workspace"
 yanked = "deny"
-# rsa timing side-channel (Marvin Attack), pulled in transitively via
-# octocrab -> jsonwebtoken -> rsa for GitHub App JWT auth. No safe upgrade
-# is available upstream yet.
-ignore = ["RUSTSEC-2023-0071"]
 
 # Commercial-safe policy: permissive licenses + MPL-2.0 (file-level copyleft only).
 # Anything else (GPL/LGPL/AGPL/source-available) fails the check for manual review.
@@ -13,7 +9,6 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "BSL-1.0",
@@ -38,7 +33,4 @@ unknown-git = "deny"
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip = [
-    { crate = "getrandom" },
-    { crate = "windows-sys" },
-]
+skip = [{ crate = "getrandom" }, { crate = "untrusted" }]
