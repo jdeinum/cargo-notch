@@ -1,3 +1,8 @@
+## [0.1.8] - 2026-07-06
+
+### 🐛 Bug Fixes
+
+- No duplicate commits for multiple file commits
 ## [0.1.7] - 2026-07-06
 
 ### 🚀 Features
