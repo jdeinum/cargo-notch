@@ -1,3 +1,13 @@
+## [0.1.10] - 2026-07-06
+
+### 🐛 Bug Fixes
+
+- Move info logs to debug
+- Logs to stderr
+
+### ⚙️ Miscellaneous Tasks
+
+- Fmt
 ## [0.1.9] - 2026-07-06
 
 ### 🐛 Bug Fixes
