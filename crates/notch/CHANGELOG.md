@@ -1,3 +1,25 @@
+## [0.1.5] - 2026-07-06
+
+### 🚀 Features
+
+- Tag looking good
+
+### 🚜 Refactor
+
+- Pass token + aws cranelift
+
+### 📚 Documentation
+
+- Add comment for demo
+
+### ⚙️ Miscellaneous Tasks
+
+- Changelog + version bump
+- Working on tag feature
+- Clippy fixes
+- Cleanup
+- Clippy fixes
+- Deny fixes
 ## [0.1.4] - 2026-07-04
 
 ### 📚 Documentation
