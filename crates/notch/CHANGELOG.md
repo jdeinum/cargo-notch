@@ -1,3 +1,12 @@
+## [0.1.6] - 2026-07-06
+
+### 🚀 Features
+
+- List package we are releasing
+
+### ⚙️ Miscellaneous Tasks
+
+- Added justfile
 ## [0.1.5] - 2026-07-06
 
 ### 🚀 Features
