@@ -18,12 +18,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install version-diff tool
-        run: cargo install --path tools/version-diff
+      - name: Install cargo-notch
+        run: cargo install --git https://github.com/jdeinum/notch cargo-notch
 
       - name: Compute new tags
         run: |
-          version-diff \
+          cargo notch tag \
             --old ${{ github.event.before }} \
             --new ${{ github.sha }} \
             > tags.txt
