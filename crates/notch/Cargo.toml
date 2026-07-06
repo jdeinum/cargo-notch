@@ -11,6 +11,13 @@ categories = ["development-tools::build-utils", "command-line-utilities"]
 [dependencies]
 anyhow = "1.0.102"
 cargo_metadata = "0.23.1"
+clap = { version = "4.6", default-features = false, features = [
+    "derive",
+    "std",
+    "help",
+    "usage",
+    "error-context",
+] }
 git2 = "0.21.0"
 octocrab = "0.53.1"
 serde = { version = "1.0.228", features = ["derive"] }

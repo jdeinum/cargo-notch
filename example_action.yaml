@@ -1,0 +1,46 @@
+name: Tag crate versions
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  tag-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.TAG_PUSH_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install version-diff tool
+        run: cargo install --path tools/version-diff
+
+      - name: Compute new tags
+        run: |
+          version-diff \
+            --old ${{ github.event.before }} \
+            --new ${{ github.sha }} \
+            > tags.txt
+          echo "--- tags to create ---"
+          cat tags.txt
+
+      - name: Create and push tags
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "tag $tag already exists, skipping"
+              continue
+            fi
+            git tag -a "$tag" -m "Release $tag" ${{ github.sha }}
+            git push origin "refs/tags/$tag"
+          done < tags.txt
