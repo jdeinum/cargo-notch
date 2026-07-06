@@ -52,8 +52,14 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
         let new_version = new_packages.get(package).cloned();
 
         if let Some(tag) = tag(old_version, new_version).context("get tag")? {
+            // derive the name
+            let package_name: &str = package
+                .rsplit('/')
+                .next()
+                .ok_or_else(|| Error::msg("No package name"))?;
+
             info!("creating tag {tag} for package {package}");
-            println!("{package}:{tag}");
+            println!("{package_name}:{tag}");
         }
     }
 
