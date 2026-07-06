@@ -106,14 +106,12 @@ fn get_changed_crates_with_commits<'a>(
         // we do that by removing the path up to and including the current dir for the packages, to
         // match how git sees it.
 
-        for file in files {
-            for cratem in crates {
-                if file.starts_with(&cratem.name) {
-                    changed_crates
-                        .entry(cratem.clone())
-                        .or_default()
-                        .push(commit.clone());
-                }
+        for cratem in crates {
+            if files.iter().any(|f| f.starts_with(&cratem.name)) {
+                changed_crates
+                    .entry(cratem.clone())
+                    .or_default()
+                    .push(commit.clone());
             }
         }
     }
