@@ -73,6 +73,16 @@ Some other considerations is that notch does not strive to verify your public
 API changes, nor does it automatically decide your next version, instead it
 shows you all of the commits included, grouped by type, and lets you decide.
 
+## Development
+
+```sh
+# Install git hooks (run once after cloning)
+git config core.hooksPath .githooks
+```
+
+The pre-push hook runs `cargo fmt --check`, `cargo clippy`, and `cargo deny
+check` before every push.
+
 ## Installation
 
 See [INSTALL.md](./INSTALL.md)

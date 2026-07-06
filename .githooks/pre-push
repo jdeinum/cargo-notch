@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+echo "→ fmt"
+cargo fmt --all -- --check
+
+echo "→ clippy"
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+echo "→ deny"
+cargo deny check
