@@ -113,6 +113,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo-notch"
+version = "0.1.6"
+dependencies = [
+ "anyhow",
+ "cargo_metadata",
+ "clap",
+ "git2",
+ "octocrab",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "cargo-platform"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -759,20 +773,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "notch"
-version = "0.1.6"
-dependencies = [
- "anyhow",
- "cargo_metadata",
- "clap",
- "git2",
- "octocrab",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
