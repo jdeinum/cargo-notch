@@ -1,9 +1,25 @@
 # Build Tool
 
+## Configuration
+
+`notch.toml` in the repo root is optional; every field has a default matching
+the previous hardcoded behavior. Only set what you need to override:
+
+```toml
+[repo]
+# owner = "..."   # defaults to the owner parsed from the origin remote's URL
+# name = "..."    # defaults to the repo name parsed from the origin remote's URL
+
+[release]
+default_branch = "master"          # branch releases are diffed/opened against
+remote = "origin"
+tag_format = "{name}-v{version}"   # {name} is the Cargo package name, not the workspace directory
+```
+
 ## Assumptions
 
-origin/master ALWAYS contains the up to date working code. This is the thing we
-diff against.
+`<remote>/<default_branch>` (`origin/master` by default) ALWAYS contains the
+up to date working code. This is the thing we diff against.
 
 This means that we need to have the following enabled in github for the repo
 

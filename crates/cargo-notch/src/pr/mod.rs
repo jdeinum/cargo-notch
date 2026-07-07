@@ -1,3 +1,4 @@
+use crate::config::{self, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::workspace::{Crate, get_cleaned_members};
 use anyhow::Context;
@@ -17,16 +18,19 @@ use tracing::info;
 pub fn run(token: &str) -> Result<()> {
     let pwd = std::env::current_dir().context("get current dir")?;
     let cleaned_members = get_cleaned_members(&pwd).context("get cleaned members")?;
+    let config = config::load(&pwd).context("load notch.toml")?;
 
     let repo: Repository = Repository::init(".").context("open repo")?;
+    let (owner, repo_name) =
+        config::resolve_owner_repo(&repo, &config.repo).context("resolve owner/repo")?;
 
-    let commits = get_commits(&repo).context("get commits")?;
+    let commits = get_commits(&repo, &config.release).context("get commits")?;
 
     let changed_crates = get_changed_crates_with_commits(&repo, &commits, &cleaned_members)
         .context("get changed crates")?;
 
     for ccrate in changed_crates {
-        update_package(&ccrate.0).context("Update package")?;
+        update_package(&ccrate.0, &config.release).context("Update package")?;
     }
 
     // cargo generate-lockfile so we update everything we need
@@ -37,25 +41,24 @@ pub fn run(token: &str) -> Result<()> {
 
     // push to the remote
     // requires we have access to the SSH agent on our system, not quite sure how to do that yet
-    push_current_branch(&repo).context("push current branch")?;
+    push_current_branch(&repo, &config.release).context("push current branch")?;
 
     // open the PR
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .context("spawn runtime")?;
-    rt.block_on(open_pr("jdeinum", &repo, token))
+    rt.block_on(open_pr(&owner, &repo_name, &repo, &config.release, token))
         .context("open PR on runtime")?;
 
     Ok(())
 }
 
-fn get_commits(repo: &Repository) -> Result<Vec<Commit<'_>>> {
-    // find the list of commits present locally but not origin/master
+fn get_commits<'a>(repo: &'a Repository, release: &ReleaseConfig) -> Result<Vec<Commit<'a>>> {
+    // find the list of commits present locally but not on the release branch
     let mut revwalk = repo.revwalk().context("create revwalk")?;
 
-    // we want the last commit present on origin master so we can find what changed in our first commit
-    let commit_range = "origin/master..HEAD".to_string();
+    let commit_range = release.commit_range();
     revwalk
         .push_range(&commit_range)
         .context("revwalk commit range")?;
@@ -107,7 +110,7 @@ fn get_changed_crates_with_commits<'a>(
         // match how git sees it.
 
         for cratem in crates {
-            if files.iter().any(|f| f.starts_with(&cratem.name)) {
+            if files.iter().any(|f| f.starts_with(&cratem.path)) {
                 changed_crates
                     .entry(cratem.clone())
                     .or_default()
@@ -117,7 +120,7 @@ fn get_changed_crates_with_commits<'a>(
     }
 
     for (c_crate, commits) in &changed_crates {
-        info!("Crate {} changed from the following commits:", c_crate.name);
+        info!("Crate {} changed from the following commits:", c_crate.path);
         for c in commits {
             info!(
                 "{}",
@@ -176,15 +179,15 @@ fn generate_lockfile() -> Result<()> {
     Ok(())
 }
 
-fn generate_changelog(tag: &str, crate_name: &str) -> Result<()> {
+fn generate_changelog(tag: &str, crate_path: &str, release: &ReleaseConfig) -> Result<()> {
     let res = Command::new("git")
         .args([
             "cliff",
             "--tag",
             tag,
             "--prepend",
-            &format!("{crate_name}/CHANGELOG.md"),
-            "origin/master..HEAD",
+            &format!("{crate_path}/CHANGELOG.md"),
+            &release.commit_range(),
         ])
         .spawn()
         .context("spawn child to run git cliff")?
@@ -198,7 +201,7 @@ fn generate_changelog(tag: &str, crate_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn update_package(ccrate: &Crate) -> Result<()> {
+fn update_package(ccrate: &Crate, release: &ReleaseConfig) -> Result<()> {
     // suggest a list of version bumps for each service changed
     let cur_ver = &ccrate.version;
     let options: (Version, Version, Version) = (
@@ -229,8 +232,8 @@ fn update_package(ccrate: &Crate) -> Result<()> {
     info!("User selected: {}", selected);
 
     // create a backup of the current Cargo.toml
-    let real_file = format!("{}/Cargo.toml", ccrate.name);
-    let tmp_file = format!("{}/Cargo.toml.bak", ccrate.name);
+    let real_file = format!("{}/Cargo.toml", ccrate.path);
+    let tmp_file = format!("{}/Cargo.toml.bak", ccrate.path);
 
     let res = Command::new("cp")
         .args([&real_file, &tmp_file])
@@ -274,20 +277,19 @@ fn update_package(ccrate: &Crate) -> Result<()> {
     }
 
     // generate the changelog entry using git cliff,
-    generate_changelog(&selected.to_string(), &ccrate.name).context("generate changelog")?;
+    generate_changelog(&selected.to_string(), &ccrate.path, release)
+        .context("generate changelog")?;
 
     Ok(())
 }
 
-fn push_current_branch(repo: &Repository) -> Result<()> {
+fn push_current_branch(repo: &Repository, release: &ReleaseConfig) -> Result<()> {
     let head = repo.head().context("get head")?;
     let branch = head.name().context("get head name")?;
 
-    let mut remote = repo
-        .find_remote("origin")
-        .context("get remote for origin")?;
+    let mut remote = repo.find_remote(&release.remote).context("get remote")?;
 
-    info!("Found remote origin");
+    info!("Found remote {}", release.remote);
 
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(|_url, username, _allowed| {
@@ -307,7 +309,13 @@ fn push_current_branch(repo: &Repository) -> Result<()> {
 // Runs only on a current-thread tokio runtime (see run()), so the future is
 // never sent across threads despite git2 types not being Send.
 #[allow(clippy::future_not_send)]
-async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
+async fn open_pr(
+    owner: &str,
+    repo_name: &str,
+    repo: &Repository,
+    release: &ReleaseConfig,
+    token: &str,
+) -> Result<()> {
     let head = repo.head().context("get branch head")?;
     let branch = git2::Branch::wrap(head);
     let name = branch
@@ -320,7 +328,10 @@ async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
         .name()
         .context("get branch name")?
         .ok_or_else(|| Error::msg("No branch name"))?;
-    info!("Creating PR from {upstream_branch_name} into master");
+    info!(
+        "Creating PR from {upstream_branch_name} into {}",
+        release.default_branch
+    );
 
     let octocrab = Octocrab::builder()
         .personal_token(token)
@@ -328,8 +339,8 @@ async fn open_pr(username: &str, repo: &Repository, token: &str) -> Result<()> {
         .context("build octocrab")?;
 
     let pr = octocrab
-        .pulls(username, "notch")
-        .create("Chore: release", name, "master")
+        .pulls(owner, repo_name)
+        .create("Chore: release", name, &release.default_branch)
         .body("A release!")
         .send()
         .await
