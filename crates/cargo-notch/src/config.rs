@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(config.repo.name, None);
         assert_eq!(config.release.default_branch, "master");
         assert_eq!(config.release.remote, "origin");
-        assert_eq!(config.release.tag_format, "{name}-v{version}");
+        assert_eq!(config.release.tag_format, "v{version}");
     }
 
     #[test]
