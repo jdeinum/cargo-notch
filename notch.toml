@@ -1,0 +1,12 @@
+# See CONFIGURATION.md for the full field reference.
+# Every field below is the default cargo-notch already uses; this file exists
+# to document the config, not to override anything.
+
+[repo]
+# owner = "my-org"
+# name = "my-repo"
+
+[release]
+default_branch = "master"
+remote = "origin"
+tag_format = "{name}-v{version}"

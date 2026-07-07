@@ -6,6 +6,9 @@ use tracing::info;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Crate {
+    /// Workspace-relative directory containing the crate's `Cargo.toml`.
+    pub path: String,
+    /// The package's actual `[package] name` from its `Cargo.toml`.
     pub name: String,
     pub version: MyVersion,
 }
@@ -49,7 +52,7 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
     let cleaned_members: Vec<Crate> = members
         .iter()
         .map(|s| {
-            let x: String = s
+            let path: String = s
                 .repr
                 .replace("path+file://", "")
                 .replace(&format!("{}/", dir.to_str().unwrap()), "")
@@ -58,15 +61,13 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
                 .unwrap()
                 .to_string();
 
-            let v = packages
-                .iter()
-                .find(|p| p.id == *s)
-                .unwrap()
-                .version
-                .clone();
+            let package = packages.iter().find(|p| p.id == *s).unwrap();
             Crate {
-                name: x,
-                version: MyVersion { version: v },
+                path,
+                name: package.name.to_string(),
+                version: MyVersion {
+                    version: package.version.clone(),
+                },
             }
         })
         .collect();

@@ -1,3 +1,4 @@
+use crate::config::{self, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::workspace::{Crate, get_cleaned_members};
 use anyhow::Context;
@@ -25,45 +26,74 @@ pub fn tag(old: Option<Version>, new: Option<Version>) -> Result<Option<Version>
 }
 
 pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
-    // get all of the packages from the old commit
-    let old_packages: HashMap<String, Version> = get_cleaned_members_in_commit(old_commit)
-        .context("get crate members")?
-        .iter()
-        .map(|x| (x.name.clone(), x.version.version.clone()))
-        .collect();
+    let pwd = std::env::current_dir().context("get current dir")?;
+    let config = config::load(&pwd).context("load notch.toml")?;
 
-    // get all of the packages from the new commit
-    let new_packages: HashMap<String, Version> = get_cleaned_members_in_commit(new_commit)
-        .context("get crate members")?
-        .iter()
-        .map(|x| (x.name.clone(), x.version.version.clone()))
-        .collect();
+    let old_members = get_cleaned_members_in_commit(old_commit).context("get crate members")?;
+    let new_members = get_cleaned_members_in_commit(new_commit).context("get crate members")?;
 
-    // get all of the names so we can easily iterate over them
-    let names: HashSet<&str> = old_packages
-        .iter()
-        .chain(new_packages.iter())
-        .map(|x| x.0.as_str())
-        .collect();
-
-    // for each package:
-    for package in names {
-        let old_version = old_packages.get(package).cloned();
-        let new_version = new_packages.get(package).cloned();
-
-        if let Some(tag) = tag(old_version, new_version).context("get tag")? {
-            // derive the name
-            let package_name: &str = package
-                .rsplit('/')
-                .next()
-                .ok_or_else(|| Error::msg("No package name"))?;
-
-            info!("creating tag {tag} for package {package}");
-            println!("{package_name}-v{tag}");
-        }
+    for tag_name in compute_tags(&old_members, &new_members, &config.release)? {
+        println!("{tag_name}");
     }
 
     Ok(())
+}
+
+// determines, for each workspace member present in either commit, whether a
+// tag should be created, and formats it using the real Cargo package name
+// (not the workspace-relative directory, which may differ — see workspace.rs)
+fn compute_tags(
+    old_members: &[Crate],
+    new_members: &[Crate],
+    release: &ReleaseConfig,
+) -> Result<Vec<String>> {
+    // keyed by workspace-relative path (stable identity across commits; the
+    // Cargo package name is only needed for the emitted tag)
+    let old_packages: HashMap<&str, (&str, Version)> = old_members
+        .iter()
+        .map(|x| {
+            (
+                x.path.as_str(),
+                (x.name.as_str(), x.version.version.clone()),
+            )
+        })
+        .collect();
+    let new_packages: HashMap<&str, (&str, Version)> = new_members
+        .iter()
+        .map(|x| {
+            (
+                x.path.as_str(),
+                (x.name.as_str(), x.version.version.clone()),
+            )
+        })
+        .collect();
+
+    let paths: HashSet<&str> = old_packages
+        .keys()
+        .chain(new_packages.keys())
+        .copied()
+        .collect();
+
+    let mut tags = Vec::new();
+    for path in paths {
+        let old_entry = old_packages.get(path);
+        let new_entry = new_packages.get(path);
+
+        let package_name = new_entry
+            .or(old_entry)
+            .map(|(name, _)| (*name).to_string())
+            .ok_or_else(|| Error::msg("No package name"))?;
+        let old_version = old_entry.map(|(_, v)| v.clone());
+        let new_version = new_entry.map(|(_, v)| v.clone());
+
+        if let Some(tag) = tag(old_version, new_version).context("get tag")? {
+            let tag_name = release.format_tag(&package_name, &tag.to_string());
+            info!("creating tag {tag_name} for package {package_name} ({path})");
+            tags.push(tag_name);
+        }
+    }
+
+    Ok(tags)
 }
 
 // checks out `commit` into a throwaway worktree so we can read the workspace's
@@ -112,4 +142,47 @@ fn get_cleaned_members_in_commit(commit: &str) -> Result<Vec<Crate>> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_tags;
+    use crate::config::ReleaseConfig;
+    use crate::workspace::{Crate, MyVersion};
+    use cargo_metadata::semver::Version;
+
+    fn member(path: &str, name: &str, version: &str) -> Crate {
+        Crate {
+            path: path.to_string(),
+            name: name.to_string(),
+            version: MyVersion {
+                version: Version::parse(version).unwrap(),
+            },
+        }
+    }
+
+    #[test]
+    fn tag_uses_package_name_not_directory_basename() {
+        let release = ReleaseConfig::default();
+        let old = vec![member("services/user", "user_service", "0.2.48")];
+        let new = vec![member("services/user", "user_service", "0.2.49")];
+
+        let tags = compute_tags(&old, &new, &release).unwrap();
+
+        assert_eq!(tags, vec!["user_service-v0.2.49".to_string()]);
+    }
+
+    #[test]
+    fn respects_configured_tag_format() {
+        let release = ReleaseConfig {
+            tag_format: "release/{name}/{version}".to_string(),
+            ..ReleaseConfig::default()
+        };
+        let old = vec![member("services/user", "user_service", "0.2.48")];
+        let new = vec![member("services/user", "user_service", "0.2.49")];
+
+        let tags = compute_tags(&old, &new, &release).unwrap();
+
+        assert_eq!(tags, vec!["release/user_service/0.2.49".to_string()]);
+    }
 }
