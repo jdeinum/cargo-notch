@@ -1,3 +1,8 @@
+## [0.1.14] - 2026-07-07
+
+### 🐛 Bug Fixes
+
+- Fetch before generating commit range
 ## [0.1.13] - 2026-07-07
 
 ### 🐛 Bug Fixes
