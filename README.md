@@ -1,5 +1,23 @@
 # Notch
 
+<div align="center"><p>
+    <a href="https://github.com/jdeinum/notch/tags">
+      <img alt="Current tag" src="https://img.shields.io/github/v/tag/jdeinum/notch?style=for-the-badge&logo=starship&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41&sort=semver" />
+    </a>
+    <a href="https://github.com/jdeinum/notch/pulse">
+      <img alt="Last commit" src="https://img.shields.io/github/last-commit/jdeinum/notch?style=for-the-badge&logo=starship&color=8bd5ca&logoColor=D9E0EE&labelColor=302D41"/>
+    </a>
+    <a href="https://github.com/jdeinum/notch/actions/workflows/check.yaml">
+      <img alt="Check" src="https://img.shields.io/github/actions/workflow/status/jdeinum/notch/check.yaml?style=for-the-badge&logo=starship&color=c69ff5&logoColor=D9E0EE&labelColor=302D41" />
+    </a>
+    <a href="https://github.com/jdeinum/notch/actions/workflows/test.yaml">
+      <img alt="Test" src="https://img.shields.io/github/actions/workflow/status/jdeinum/notch/test.yaml?style=for-the-badge&logo=starship&color=F5E0DC&logoColor=D9E0EE&labelColor=302D41" />
+    </a>
+    <a href="https://github.com/jdeinum/notch/actions/workflows/audit.yaml">
+      <img alt="Audit" src="https://img.shields.io/github/actions/workflow/status/jdeinum/notch/audit.yaml?style=for-the-badge&logo=starship&color=ee999f&logoColor=D9E0EE&labelColor=302D41" />
+    </a>
+</p></div>
+
 Notch is designed to be an ultra simple build tool that versions against a
 ground source branch for your repository. The goal is to provide a simple
 interface that allows you to version your new releases, generate a
