@@ -9,4 +9,4 @@
 [release]
 default_branch = "master"
 remote = "origin"
-tag_format = "{name}-v{version}"
+tag_format = "v{version}"
