@@ -24,13 +24,15 @@ pub fn run(token: &str) -> Result<()> {
     let (owner, repo_name) =
         config::resolve_owner_repo(&repo, &config.repo).context("resolve owner/repo")?;
 
+    fetch_remote(&repo, &config.release).context("fetch remote")?;
+
     let commits = get_commits(&repo, &config.release).context("get commits")?;
 
     let changed_crates = get_changed_crates_with_commits(&repo, &commits, &cleaned_members)
         .context("get changed crates")?;
 
-    for ccrate in changed_crates {
-        update_package(&ccrate.0, &config.release).context("Update package")?;
+    for (crate_info, commits) in changed_crates {
+        update_package(&crate_info, &commits, &config.release).context("Update package")?;
     }
 
     // cargo generate-lockfile so we update everything we need
@@ -50,6 +52,30 @@ pub fn run(token: &str) -> Result<()> {
         .context("spawn runtime")?;
     rt.block_on(open_pr(&owner, &repo_name, &repo, &config.release, token))
         .context("open PR on runtime")?;
+
+    Ok(())
+}
+
+// Updates the local `<remote>/<default_branch>` tracking ref before we diff
+// against it. Without this, a stale local ref makes `commit_range()` include
+// far more history than is actually unmerged, and every crate ever touched
+// in that stale range gets (incorrectly) flagged as changed.
+fn fetch_remote(repo: &Repository, release: &ReleaseConfig) -> Result<()> {
+    let mut remote = repo
+        .find_remote(&release.remote)
+        .context("get remote to fetch")?;
+
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(|_url, username, _allowed| {
+        Cred::ssh_key_from_agent(username.unwrap_or("git"))
+    });
+
+    let mut opts = git2::FetchOptions::new();
+    opts.remote_callbacks(callbacks);
+
+    remote
+        .fetch(&[&release.default_branch], Some(&mut opts), None)
+        .context("fetch default branch from remote")?;
 
     Ok(())
 }
@@ -201,7 +227,7 @@ fn generate_changelog(tag: &str, crate_path: &str, release: &ReleaseConfig) -> R
     Ok(())
 }
 
-fn update_package(ccrate: &Crate, release: &ReleaseConfig) -> Result<()> {
+fn update_package(ccrate: &Crate, commits: &[Commit], release: &ReleaseConfig) -> Result<()> {
     // suggest a list of version bumps for each service changed
     let cur_ver = &ccrate.version;
     let options: (Version, Version, Version) = (
@@ -209,6 +235,14 @@ fn update_package(ccrate: &Crate, release: &ReleaseConfig) -> Result<()> {
         cur_ver.bump_minor(),
         cur_ver.bump_major(),
     );
+
+    // show the commits responsible for flagging this crate, oldest first, so
+    // the user can sanity-check the suggested bump before picking one
+    println!("Commits that changed {}:", ccrate.name);
+    for c in commits {
+        let summary = c.summary().ok().flatten().unwrap_or("<no summary>");
+        println!("  {} {}", &c.id().to_string()[..7], summary);
+    }
 
     // allow the user to override the version bump for each service
     print!(
