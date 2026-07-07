@@ -28,10 +28,12 @@ pub fn run(token: &str) -> Result<()> {
 
     let commits = get_commits(&repo, &config.release).context("get commits")?;
 
-    let changed_crates = get_changed_crates_with_commits(&repo, &commits, &cleaned_members)
+    let changed_crates = get_changed_crates(&repo, &config.release, &cleaned_members)
         .context("get changed crates")?;
+    let changed_crates_with_commits = attribute_commits_to_crates(&repo, &commits, &changed_crates)
+        .context("attribute commits to changed crates")?;
 
-    for (crate_info, commits) in changed_crates {
+    for (crate_info, commits) in changed_crates_with_commits {
         update_package(&crate_info, &commits, &config.release).context("Update package")?;
     }
 
@@ -99,20 +101,95 @@ fn get_commits<'a>(repo: &'a Repository, release: &ReleaseConfig) -> Result<Vec<
     Ok(commits)
 }
 
-fn get_changed_crates_with_commits<'a>(
+// Determines which crates actually differ between HEAD and the merge-base
+// with `<remote>/<default_branch>` — i.e. what's really different from the
+// current upstream state, regardless of how the branch's history got there
+// (merges, reverts, rebases, ...). This is the authoritative source for
+// which crates need a version bump.
+//
+// Walking each commit's diff against its immediate parent and unioning the
+// touched paths doesn't work: a merge commit's diff against its first parent
+// pulls in everything the *other* parent brought in (e.g. an entire release
+// worth of changes from `master`), and reverted changes still get counted
+// even though the net diff against upstream is zero.
+fn get_changed_crates(
+    repo: &Repository,
+    release: &ReleaseConfig,
+    crates: &[Crate],
+) -> Result<HashSet<Crate>> {
+    let head = repo
+        .head()
+        .context("get head")?
+        .peel_to_commit()
+        .context("peel head to commit")?;
+
+    let upstream_ref = format!("{}/{}", release.remote, release.default_branch);
+    let upstream = repo
+        .revparse_single(&upstream_ref)
+        .context("resolve upstream ref")?
+        .peel_to_commit()
+        .context("peel upstream ref to commit")?;
+
+    let base_oid = repo
+        .merge_base(head.id(), upstream.id())
+        .context("find merge base with upstream")?;
+    let base_commit = repo
+        .find_commit(base_oid)
+        .context("find merge base commit")?;
+
+    let head_tree = head.tree().context("get head tree")?;
+    let base_tree = base_commit.tree().context("get merge base tree")?;
+    let diff = repo
+        .diff_tree_to_tree(
+            Some(&base_tree),
+            Some(&head_tree),
+            Some(&mut DiffOptions::default()),
+        )
+        .context("diff head against merge base")?;
+
+    let files: HashSet<&Path> = diff
+        .deltas()
+        .flat_map(|d| [d.new_file().path().unwrap(), d.old_file().path().unwrap()])
+        .collect();
+
+    info!("Files changed between {upstream_ref} and HEAD: {files:?}");
+
+    let changed_crates: HashSet<Crate> = crates
+        .iter()
+        .filter(|c| files.iter().any(|f| f.starts_with(&c.path)))
+        .cloned()
+        .collect();
+
+    for c_crate in &changed_crates {
+        info!("Crate {} changed", c_crate.path);
+    }
+
+    Ok(changed_crates)
+}
+
+// Attributes each already-confirmed changed crate to the non-merge commits
+// whose own diff touched its path, purely for displaying to the user which
+// commits are likely responsible — this is informational, not authoritative
+// (see `get_changed_crates`).
+fn attribute_commits_to_crates<'a>(
     repo: &'a Repository,
     commits: &'a [Commit],
-    crates: &[Crate],
+    changed_crates: &HashSet<Crate>,
 ) -> Result<HashMap<Crate, Vec<Commit<'a>>>> {
-    // get the list of updated services for each commit
-    // to do this, we'll walk each commit, and check which services changed
-    let mut changed_crates: HashMap<Crate, Vec<Commit>> = HashMap::new();
-    for commit in commits {
-        // find the files changed for this commit
-        // NOTE: We just handle a single parent for now
-        let parent_commit = commit.parent(0).context("get first parent")?;
+    let mut attributed: HashMap<Crate, Vec<Commit>> = changed_crates
+        .iter()
+        .map(|c| (c.clone(), Vec::new()))
+        .collect();
 
-        // get diff between the commit and its parent
+    for commit in commits {
+        // merge commits are excluded here for the same reason as in
+        // `get_changed_crates`: their diff against a single parent isn't a
+        // faithful account of what that commit itself changed.
+        if commit.parent_count() != 1 {
+            continue;
+        }
+
+        let parent_commit = commit.parent(0).context("get first parent")?;
         let cur_tree = commit.tree().context("get tree for current commit")?;
         let parent_tree = parent_commit.tree().context("get tree for parent commit")?;
         let diff = repo
@@ -128,24 +205,17 @@ fn get_changed_crates_with_commits<'a>(
             .flat_map(|d| [d.new_file().path().unwrap(), d.old_file().path().unwrap()])
             .collect();
 
-        info!("Changed files for {:?} is {files:?}", commit.id());
-
-        // find the crates that we actually changed with these files by cross referencing them to
-        // the workplace members
-        // we do that by removing the path up to and including the current dir for the packages, to
-        // match how git sees it.
-
-        for cratem in crates {
+        for cratem in changed_crates {
             if files.iter().any(|f| f.starts_with(&cratem.path)) {
-                changed_crates
-                    .entry(cratem.clone())
-                    .or_default()
+                attributed
+                    .get_mut(cratem)
+                    .expect("populated from changed_crates above")
                     .push(commit.clone());
             }
         }
     }
 
-    for (c_crate, commits) in &changed_crates {
+    for (c_crate, commits) in &attributed {
         info!("Crate {} changed from the following commits:", c_crate.path);
         for c in commits {
             info!(
@@ -158,7 +228,7 @@ fn get_changed_crates_with_commits<'a>(
         }
     }
 
-    Ok(changed_crates)
+    Ok(attributed)
 }
 
 fn commit_changes(repo: &Repository) -> Result<()> {
