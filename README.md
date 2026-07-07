@@ -13,10 +13,10 @@ If you have ideas, please create an issue!
 NOTE: I am still working on the alpha, please do not use this yet!
 
 - ✅ Initial prototype - [39d5eea](https://github.com/jdeinum/notch/commit/39d5eea1943a79ad88419e876f41917d15ed906f)
-- ☑️ Github action that creates tags from merged PRs matching specs
+- ✅ Github action that creates tags from merged PRs matching specs - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
+- ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
+- ✅ Working CLI - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
 - ☑️ CI/CD stuff
-- ☑️ Move hardcoded stuff to TOML config
-- ☑️ Working CLI
 - ☑️ Working TUI
 - ☑️ Release v1.0.0
 - ☑️ Auto versioning option
