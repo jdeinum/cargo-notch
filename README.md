@@ -34,8 +34,8 @@ git checkout -b feature/add_two
 # commit
 git commit -m "feat: added the add_two function"
 
-# run cargo notch
-cargo notch
+# bump versions, update changelogs, and open a release PR for changed crates
+cargo notch pr --token <github-token>
 
 # merge PR on github or from cli (not required if auto-merge is used)
 gh pr merge <pr_number>

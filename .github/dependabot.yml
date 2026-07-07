@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # GitHub Actions: bump action pins weekly so we don't drift onto unsupported
+  # schemas (release-plz CLI, docker actions, rust-toolchain, etc.).
+  # Majors are surfaced as individual PRs (no group); the auto-merge workflow
+  # filters them out so a human reviews breaking changes.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Cargo: group minor + patch bumps into a single PR per week. Majors come
+  # as individual PRs; auto-merge workflow ignores them so they wait for
+  # human review.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

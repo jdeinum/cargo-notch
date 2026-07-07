@@ -18,7 +18,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@nightly
 
+      - name: Cache cargo-notch binary
+        id: notch-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-notch
+          key: cargo-notch-${{ runner.os }}-${{ github.sha }}
+
       - name: Install cargo-notch
+        if: steps.notch-cache.outputs.cache-hit != 'true'
         run: cargo install --git https://github.com/jdeinum/notch cargo-notch
 
       - name: Compute new tags
