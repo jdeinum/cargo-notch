@@ -34,7 +34,7 @@ NOTE: I am still working on the alpha, please do not use this yet!
 - ✅ Github action that creates tags from merged PRs matching specs - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
 - ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
 - ✅ Working CLI - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
-- ☑️ CI/CD stuff
+- ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
 - ☑️ Working TUI
 - ☑️ Release v1.0.0
 - ☑️ Auto versioning option
