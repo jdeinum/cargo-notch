@@ -18,7 +18,7 @@ pub fn tag(old: Option<Version>, new: Option<Version>) -> Result<Option<Version>
 
         // if there is both an old and new version, but the older version is higher than the new
         // one, we return an error for that
-        (Some(o), Some(n)) if o < n => Err(Error::msg("New version is older than the old version")),
+        (Some(o), Some(n)) if o > n => Err(Error::msg("New version is older than the old version")),
 
         // otherwise, we don't release anything
         _ => Ok(None),
@@ -146,10 +146,9 @@ fn get_cleaned_members_in_commit(commit: &str) -> Result<Vec<Crate>> {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_tags;
-    use crate::config::ReleaseConfig;
-    use crate::workspace::{Crate, MyVersion};
-    use cargo_metadata::semver::Version;
+    use super::*;
+    use crate::workspace::MyVersion;
+    use std::assert_matches;
 
     fn member(path: &str, name: &str, version: &str) -> Crate {
         Crate {
@@ -166,9 +165,7 @@ mod tests {
         let release = ReleaseConfig::default();
         let old = vec![member("services/user", "user_service", "0.2.48")];
         let new = vec![member("services/user", "user_service", "0.2.49")];
-
         let tags = compute_tags(&old, &new, &release).unwrap();
-
         assert_eq!(tags, vec!["user_service-v0.2.49".to_string()]);
     }
 
@@ -180,9 +177,41 @@ mod tests {
         };
         let old = vec![member("services/user", "user_service", "0.2.48")];
         let new = vec![member("services/user", "user_service", "0.2.49")];
-
         let tags = compute_tags(&old, &new, &release).unwrap();
-
         assert_eq!(tags, vec!["release/user_service/0.2.49".to_string()]);
+    }
+
+    #[test]
+    fn no_old_with_new_produces_tag() {
+        let release = ReleaseConfig::default();
+        let new = vec![member("services/user", "user_service", "0.2.49")];
+        let tags = compute_tags(&[], &new, &release).unwrap();
+        assert_eq!(tags, vec!["user_service-v0.2.49"]);
+    }
+
+    #[test]
+    fn old_with_new_produces_tag() {
+        let release = ReleaseConfig::default();
+        let old = vec![member("services/user", "user_service", "0.2.48")];
+        let new = vec![member("services/user", "user_service", "0.2.49")];
+        let tags = compute_tags(&old, &new, &release).unwrap();
+        assert_eq!(tags, vec!["user_service-v0.2.49"]);
+    }
+
+    #[test]
+    fn old_with_newer_than_new_produces_error() {
+        let release = ReleaseConfig::default();
+        let old = vec![member("services/user", "user_service", "0.2.50")];
+        let new = vec![member("services/user", "user_service", "0.2.49")];
+        let tags = compute_tags(&old, &new, &release);
+        assert_matches!(tags, Err(_));
+    }
+
+    #[test]
+    fn old_with_no_new_produces_no_tag() {
+        let release = ReleaseConfig::default();
+        let old = vec![member("services/user", "user_service", "0.2.48")];
+        let tags: Vec<String> = compute_tags(&old, &[], &release).unwrap();
+        assert!(tags.is_empty());
     }
 }

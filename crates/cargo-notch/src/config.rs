@@ -116,8 +116,7 @@ fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load, parse_github_owner_repo};
-    use std::path::Path;
+    use super::*;
 
     fn repo_root() -> &'static Path {
         // crate lives at <repo>/crates/cargo-notch
@@ -129,11 +128,7 @@ mod tests {
 
     #[test]
     fn shipped_notch_toml_parses_to_defaults() {
-        // SAFETY: tests run single-threaded within this crate's binary here since
-        // no other test mutates process env; still, keep this isolated by using a
-        // key namespace nothing else touches.
         let config = load(repo_root()).expect("shipped notch.toml must load and parse");
-
         assert_eq!(config.repo.owner, None);
         assert_eq!(config.repo.name, None);
         assert_eq!(config.release.default_branch, "master");

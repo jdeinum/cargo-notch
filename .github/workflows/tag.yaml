@@ -3,6 +3,16 @@ name: Tag crate versions
 on:
   push:
     branches: [master]
+  workflow_call:
+    secrets:
+      release_pat:
+        required: false
+        description: >-
+          PAT with contents:write on the calling repo. Pushes made with the
+          default GITHUB_TOKEN don't trigger other workflow runs, so callers
+          that want the pushed tag to fire their own tag-triggered workflows
+          need to pass a PAT here. Falls back to GITHUB_TOKEN when omitted
+          (fine for notch's own self-tagging run).
 
 permissions:
   contents: write
@@ -14,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.release_pat || secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@nightly
 
