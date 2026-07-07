@@ -1,3 +1,12 @@
+## [0.1.12] - 2026-07-07
+
+### 🚀 Features
+
+- Config
+
+### ⚙️ Miscellaneous Tasks
+
+- Renamed action to something more reasonable
 ## [0.1.11] - 2026-07-06
 
 ### 🐛 Bug Fixes
