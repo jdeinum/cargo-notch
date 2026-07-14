@@ -1,3 +1,12 @@
+## [0.1.16] - 2026-07-14
+
+### 🚀 Features
+
+- Version information
+
+### ⚙️ Miscellaneous Tasks
+
+- Make logs debug
 ## [0.1.15] - 2026-07-07
 
 ### 🚀 Features
