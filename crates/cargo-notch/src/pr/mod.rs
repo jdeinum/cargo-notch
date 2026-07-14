@@ -41,7 +41,7 @@ pub fn run(token: &str) -> Result<()> {
 
     let mut res: Vec<UpdatedCrate> = Vec::new();
     for (crate_info, commits) in &changed_crates_with_commits {
-        res.push(get_package_updates(&crate_info, &commits).context("Update package")?);
+        res.push(get_package_updates(crate_info, commits).context("Update package")?);
     }
 
     for updated_crate in &res {
@@ -364,14 +364,14 @@ fn get_package_updates<'a, 'repo>(
     debug!("User selected: {}", selected);
 
     Ok(UpdatedCrate {
-        ccrate: &ccrate,
+        ccrate,
         new_version: selected,
-        commits: &commits,
+        commits,
     })
 }
 
-fn update_package<'a, 'repo>(
-    updated_crate: &UpdatedCrate<'a, 'repo>,
+fn update_package(
+    updated_crate: &UpdatedCrate<'_, '_>,
     release_config: &ReleaseConfig,
 ) -> Result<()> {
     // create a backup of the current Cargo.toml
