@@ -13,7 +13,7 @@ use std::{
     path::Path,
     process::Command,
 };
-use tracing::info;
+use tracing::debug;
 
 pub fn run(token: &str) -> Result<()> {
     let pwd = std::env::current_dir().context("get current dir")?;
@@ -30,11 +30,22 @@ pub fn run(token: &str) -> Result<()> {
 
     let changed_crates = get_changed_crates(&repo, &config.release, &cleaned_members)
         .context("get changed crates")?;
+
+    if changed_crates.is_empty() {
+        println!("No crates to update, not creating commits or a release pr");
+        return Ok(());
+    }
+
     let changed_crates_with_commits = attribute_commits_to_crates(&repo, &commits, &changed_crates)
         .context("attribute commits to changed crates")?;
 
-    for (crate_info, commits) in changed_crates_with_commits {
-        update_package(&crate_info, &commits, &config.release).context("Update package")?;
+    let mut res: Vec<UpdatedCrate> = Vec::new();
+    for (crate_info, commits) in &changed_crates_with_commits {
+        res.push(get_package_updates(crate_info, commits).context("Update package")?);
+    }
+
+    for updated_crate in &res {
+        update_package(updated_crate, &config.release).context("update the package")?;
     }
 
     // cargo generate-lockfile so we update everything we need
@@ -52,8 +63,16 @@ pub fn run(token: &str) -> Result<()> {
         .enable_all()
         .build()
         .context("spawn runtime")?;
-    rt.block_on(open_pr(&owner, &repo_name, &repo, &config.release, token))
-        .context("open PR on runtime")?;
+
+    rt.block_on(open_pr(
+        &owner,
+        &repo_name,
+        &repo,
+        &config.release,
+        token,
+        &res,
+    ))
+    .context("open PR on runtime")?;
 
     Ok(())
 }
@@ -97,7 +116,7 @@ fn get_commits<'a>(repo: &'a Repository, release: &ReleaseConfig) -> Result<Vec<
         x.iter().map(|c| repo.find_commit(*c)).collect();
     let commits = commits.context("get commits from oids")?;
 
-    info!("Commits: {commits:?}");
+    debug!("Commits: {commits:?}");
     Ok(commits)
 }
 
@@ -152,7 +171,7 @@ fn get_changed_crates(
         .flat_map(|d| [d.new_file().path().unwrap(), d.old_file().path().unwrap()])
         .collect();
 
-    info!("Files changed between {upstream_ref} and HEAD: {files:?}");
+    debug!("Files changed between {upstream_ref} and HEAD: {files:?}");
 
     let changed_crates: HashSet<Crate> = crates
         .iter()
@@ -161,7 +180,7 @@ fn get_changed_crates(
         .collect();
 
     for c_crate in &changed_crates {
-        info!("Crate {} changed", c_crate.path);
+        debug!("Crate {} changed", c_crate.path);
     }
 
     Ok(changed_crates)
@@ -216,9 +235,9 @@ fn attribute_commits_to_crates<'a>(
     }
 
     for (c_crate, commits) in &attributed {
-        info!("Crate {} changed from the following commits:", c_crate.path);
+        debug!("Crate {} changed from the following commits:", c_crate.path);
         for c in commits {
-            info!(
+            debug!(
                 "{}",
                 c.summary()
                     .context("get summary for commit")
@@ -297,7 +316,16 @@ fn generate_changelog(tag: &str, crate_path: &str, release: &ReleaseConfig) -> R
     Ok(())
 }
 
-fn update_package(ccrate: &Crate, commits: &[Commit], release: &ReleaseConfig) -> Result<()> {
+struct UpdatedCrate<'a, 'repo> {
+    ccrate: &'a Crate,
+    new_version: Version,
+    commits: &'a [Commit<'repo>],
+}
+
+fn get_package_updates<'a, 'repo>(
+    ccrate: &'a Crate,
+    commits: &'repo [Commit],
+) -> Result<UpdatedCrate<'a, 'repo>> {
     // suggest a list of version bumps for each service changed
     let cur_ver = &ccrate.version;
     let options: (Version, Version, Version) = (
@@ -333,11 +361,22 @@ fn update_package(ccrate: &Crate, commits: &[Commit], release: &ReleaseConfig) -
         2 => options.2,
         _ => return Err(Error::msg("Not a valid selection")),
     };
-    info!("User selected: {}", selected);
+    debug!("User selected: {}", selected);
 
+    Ok(UpdatedCrate {
+        ccrate,
+        new_version: selected,
+        commits,
+    })
+}
+
+fn update_package(
+    updated_crate: &UpdatedCrate<'_, '_>,
+    release_config: &ReleaseConfig,
+) -> Result<()> {
     // create a backup of the current Cargo.toml
-    let real_file = format!("{}/Cargo.toml", ccrate.path);
-    let tmp_file = format!("{}/Cargo.toml.bak", ccrate.path);
+    let real_file = format!("{}/Cargo.toml", updated_crate.ccrate.path);
+    let tmp_file = format!("{}/Cargo.toml.bak", updated_crate.ccrate.path);
 
     let res = Command::new("cp")
         .args([&real_file, &tmp_file])
@@ -356,8 +395,8 @@ fn update_package(ccrate: &Crate, commits: &[Commit], release: &ReleaseConfig) -
     // NOTE: If you have a dep with this version before the package version, ur cooked
     let s = std::fs::read_to_string(&real_file).context("read Cargo.toml")?;
     let s = s.replacen(
-        &format!("version = \"{}\"", cur_ver.version),
-        &format!("version = \"{selected}\""),
+        &format!("version = \"{}\"", updated_crate.ccrate.version.version),
+        &format!("version = \"{}\"", updated_crate.new_version),
         1,
     );
 
@@ -381,9 +420,12 @@ fn update_package(ccrate: &Crate, commits: &[Commit], release: &ReleaseConfig) -
     }
 
     // generate the changelog entry using git cliff,
-    generate_changelog(&selected.to_string(), &ccrate.path, release)
-        .context("generate changelog")?;
-
+    generate_changelog(
+        &updated_crate.new_version.to_string(),
+        &updated_crate.ccrate.path,
+        release_config,
+    )
+    .context("generate changelog")?;
     Ok(())
 }
 
@@ -393,7 +435,7 @@ fn push_current_branch(repo: &Repository, release: &ReleaseConfig) -> Result<()>
 
     let mut remote = repo.find_remote(&release.remote).context("get remote")?;
 
-    info!("Found remote {}", release.remote);
+    debug!("Found remote {}", release.remote);
 
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(|_url, username, _allowed| {
@@ -419,6 +461,7 @@ async fn open_pr(
     repo: &Repository,
     release: &ReleaseConfig,
     token: &str,
+    updated_crates: &[UpdatedCrate<'_, '_>],
 ) -> Result<()> {
     let head = repo.head().context("get branch head")?;
     let branch = git2::Branch::wrap(head);
@@ -432,7 +475,7 @@ async fn open_pr(
         .name()
         .context("get branch name")?
         .ok_or_else(|| Error::msg("No branch name"))?;
-    info!(
+    debug!(
         "Creating PR from {upstream_branch_name} into {}",
         release.default_branch
     );
@@ -442,10 +485,13 @@ async fn open_pr(
         .build()
         .context("build octocrab")?;
 
+    let (title, body) =
+        get_pr_title_and_description(updated_crates).context("get title pr and description")?;
+
     let pr = octocrab
         .pulls(owner, repo_name)
-        .create("Chore: release", name, &release.default_branch)
-        .body("A release!")
+        .create(title, name, &release.default_branch)
+        .body(body)
         .send()
         .await
         .context("create PR")?;
@@ -456,4 +502,40 @@ async fn open_pr(
         pr.html_url.unwrap()
     );
     Ok(())
+}
+
+fn get_pr_title_and_description(
+    updated_crates: &[UpdatedCrate<'_, '_>],
+) -> Result<(String, String)> {
+    fn bump_line(c: &UpdatedCrate<'_, '_>) -> String {
+        format!(
+            "chore: bumping {} from {} to {}",
+            c.ccrate.name, c.ccrate.version.version, c.new_version
+        )
+    }
+
+    fn commit_list(c: &UpdatedCrate<'_, '_>) -> String {
+        c.commits
+            .iter()
+            .map(|commit| {
+                let summary = commit.summary().ok().flatten().unwrap_or("<no summary>");
+                format!("- {} {}", &commit.id().to_string()[..7], summary)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    let title = match updated_crates {
+        [] => return Err(Error::msg("No updated crates, shouldn't be creating a PR!")),
+        [c] => bump_line(c),
+        _ => "chore: bumping package versions".to_string(),
+    };
+
+    let body = updated_crates
+        .iter()
+        .map(|c| format!("{}\n{}\n", bump_line(c), commit_list(c)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok((title, body))
 }

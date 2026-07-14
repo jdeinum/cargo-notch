@@ -2,7 +2,7 @@ use crate::error::Result;
 use anyhow::Context;
 use cargo_metadata::{MetadataCommand, semver::Version};
 use std::path::Path;
-use tracing::info;
+use tracing::debug;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Crate {
@@ -46,7 +46,7 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
         .context("run cargo metadata")?;
     let members = metadata.workspace_members;
     let packages = metadata.packages;
-    info!("Members: {members:?}");
+    debug!("Members: {members:?}");
 
     // clean up the members
     let cleaned_members: Vec<Crate> = members
@@ -72,6 +72,6 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
         })
         .collect();
 
-    info!("cleaned members: {cleaned_members:?}");
+    debug!("cleaned members: {cleaned_members:?}");
     Ok(cleaned_members)
 }
