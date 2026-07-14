@@ -35,7 +35,7 @@ NOTE: I am still working on the alpha, please do not use this yet!
 - ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
 - ✅ Working CLI - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
 - ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
-- ☑️ Working TUI
+- ✅ Working TUI - [79ce715](https://github.com/jdeinum/notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
 - ☑️ Release v1.0.0
 - ☑️ Auto versioning option
 - ☑️ Auto merge option
