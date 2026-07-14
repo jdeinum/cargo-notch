@@ -525,16 +525,17 @@ fn get_pr_title_and_description(
             .join("\n")
     }
 
-    match updated_crates {
-        [] => Err(Error::msg("No updated crates, shouldn't be creating a PR!")),
-        [c] => Ok((bump_line(c), commit_list(c))),
-        crates => {
-            let body = crates
-                .iter()
-                .map(|c| format!("{}\n{}\n", bump_line(c), commit_list(c)))
-                .collect::<Vec<_>>()
-                .join("\n");
-            Ok(("chore: bumping package versions".to_string(), body))
-        }
-    }
+    let title = match updated_crates {
+        [] => return Err(Error::msg("No updated crates, shouldn't be creating a PR!")),
+        [c] => bump_line(c),
+        _ => "chore: bumping package versions".to_string(),
+    };
+
+    let body = updated_crates
+        .iter()
+        .map(|c| format!("{}\n{}\n", bump_line(c), commit_list(c)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok((title, body))
 }
