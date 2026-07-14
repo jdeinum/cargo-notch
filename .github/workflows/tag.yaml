@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.release_pat || secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo-notch binary
         id: notch-cache

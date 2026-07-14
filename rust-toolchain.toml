@@ -1,9 +1,10 @@
+# Tried nightly + cranelift for faster local builds, but it needs a `-Z`
+# flag on every cargo invocation (can't be defaulted via .cargo/config.toml
+# on stable) and still hits linking issues with aws-lc on this crate's
+# dependency set: https://github.com/aws/aws-lc-rs/issues/537. Not worth the
+# friction for now — revisit if that's resolved. `rustup override set
+# nightly` in this directory if you want to experiment with it locally
+# without touching this file.
 [toolchain]
-channel = "nightly"
-components = [
-    "rustc-codegen-cranelift-preview",
-    "rust-src",
-    "rust-analyzer",
-    "rustfmt",
-    "clippy",
-]
+channel = "stable"
+components = ["rust-src", "rustfmt", "clippy"]
