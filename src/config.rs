@@ -118,17 +118,9 @@ fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
 mod tests {
     use super::*;
 
-    fn repo_root() -> &'static Path {
-        // crate lives at <repo>/crates/cargo-notch
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("crate is nested two directories below the repo root")
-    }
-
     #[test]
     fn shipped_notch_toml_parses_to_defaults() {
-        let config = load(repo_root()).expect("shipped notch.toml must load and parse");
+        let config = load(Path::new(".")).expect("shipped notch.toml must load and parse");
         assert_eq!(config.repo.owner, None);
         assert_eq!(config.repo.name, None);
         assert_eq!(config.release.default_branch, "master");

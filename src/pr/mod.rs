@@ -182,7 +182,7 @@ fn get_changed_crates(
 
     let changed_crates: HashSet<Crate> = crates
         .iter()
-        .filter(|c| files.iter().any(|f| f.starts_with(&c.path)))
+        .filter(|c| c.path == "." || files.iter().any(|f| f.starts_with(&c.path)))
         .cloned()
         .collect();
 
@@ -251,7 +251,7 @@ fn attribute_commits_to_crates(
             .collect();
 
         for cratem in changed_crates {
-            if files.iter().any(|f| f.starts_with(&cratem.path)) {
+            if cratem.path == "." || files.iter().any(|f| f.starts_with(&cratem.path)) {
                 attributed
                     .get_mut(cratem)
                     .expect("populated from changed_crates above")
