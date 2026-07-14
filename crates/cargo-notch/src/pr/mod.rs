@@ -13,7 +13,7 @@ use std::{
     path::Path,
     process::Command,
 };
-use tracing::info;
+use tracing::debug;
 
 pub fn run(token: &str) -> Result<()> {
     let pwd = std::env::current_dir().context("get current dir")?;
@@ -116,7 +116,7 @@ fn get_commits<'a>(repo: &'a Repository, release: &ReleaseConfig) -> Result<Vec<
         x.iter().map(|c| repo.find_commit(*c)).collect();
     let commits = commits.context("get commits from oids")?;
 
-    info!("Commits: {commits:?}");
+    debug!("Commits: {commits:?}");
     Ok(commits)
 }
 
@@ -171,7 +171,7 @@ fn get_changed_crates(
         .flat_map(|d| [d.new_file().path().unwrap(), d.old_file().path().unwrap()])
         .collect();
 
-    info!("Files changed between {upstream_ref} and HEAD: {files:?}");
+    debug!("Files changed between {upstream_ref} and HEAD: {files:?}");
 
     let changed_crates: HashSet<Crate> = crates
         .iter()
@@ -180,7 +180,7 @@ fn get_changed_crates(
         .collect();
 
     for c_crate in &changed_crates {
-        info!("Crate {} changed", c_crate.path);
+        debug!("Crate {} changed", c_crate.path);
     }
 
     Ok(changed_crates)
@@ -235,9 +235,9 @@ fn attribute_commits_to_crates<'a>(
     }
 
     for (c_crate, commits) in &attributed {
-        info!("Crate {} changed from the following commits:", c_crate.path);
+        debug!("Crate {} changed from the following commits:", c_crate.path);
         for c in commits {
-            info!(
+            debug!(
                 "{}",
                 c.summary()
                     .context("get summary for commit")
@@ -361,7 +361,7 @@ fn get_package_updates<'a, 'repo>(
         2 => options.2,
         _ => return Err(Error::msg("Not a valid selection")),
     };
-    info!("User selected: {}", selected);
+    debug!("User selected: {}", selected);
 
     Ok(UpdatedCrate {
         ccrate: &ccrate,
@@ -435,7 +435,7 @@ fn push_current_branch(repo: &Repository, release: &ReleaseConfig) -> Result<()>
 
     let mut remote = repo.find_remote(&release.remote).context("get remote")?;
 
-    info!("Found remote {}", release.remote);
+    debug!("Found remote {}", release.remote);
 
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(|_url, username, _allowed| {
@@ -475,7 +475,7 @@ async fn open_pr(
         .name()
         .context("get branch name")?
         .ok_or_else(|| Error::msg("No branch name"))?;
-    info!(
+    debug!(
         "Creating PR from {upstream_branch_name} into {}",
         release.default_branch
     );
