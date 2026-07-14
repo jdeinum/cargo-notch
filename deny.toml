@@ -14,6 +14,7 @@ allow = [
     "BSL-1.0",
     "Unicode-3.0",
     "Unlicense",
+    "Zlib",
 ]
 confidence-threshold = 0.8
 # notch's own workspace crate carries no license field; it's not published to
@@ -33,4 +34,8 @@ unknown-git = "deny"
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip = [{ crate = "getrandom" }, { crate = "untrusted" }]
+skip = [
+    { crate = "getrandom" },
+    { crate = "untrusted" },
+    { crate = "hashbrown" },
+]

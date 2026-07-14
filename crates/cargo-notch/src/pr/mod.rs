@@ -1,3 +1,5 @@
+mod tui;
+
 use crate::config::{self, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::workspace::{Crate, get_cleaned_members};
@@ -9,7 +11,6 @@ use git2::{
 use octocrab::Octocrab;
 use std::{
     collections::{HashMap, HashSet},
-    io::Write,
     path::Path,
     process::Command,
 };
@@ -39,10 +40,16 @@ pub fn run(token: &str) -> Result<()> {
     let changed_crates_with_commits = attribute_commits_to_crates(&repo, &commits, &changed_crates)
         .context("attribute commits to changed crates")?;
 
-    let mut res: Vec<UpdatedCrate> = Vec::new();
-    for (crate_info, commits) in &changed_crates_with_commits {
-        res.push(get_package_updates(crate_info, commits).context("Update package")?);
-    }
+    let mut packages: Vec<tui::PackageItem> = changed_crates_with_commits
+        .into_iter()
+        .map(|(ccrate, commits)| tui::PackageItem::new(ccrate, commits))
+        .collect();
+    packages.sort_by(|a, b| a.ccrate().name.cmp(&b.ccrate().name));
+
+    let Some(res) = tui::run(packages).context("select version bumps")? else {
+        println!("Cancelled, no changes made");
+        return Ok(());
+    };
 
     for updated_crate in &res {
         update_package(updated_crate, &config.release).context("update the package")?;
@@ -186,16 +193,35 @@ fn get_changed_crates(
     Ok(changed_crates)
 }
 
+/// A commit's display-relevant data, read out of `git2::Commit` up front so
+/// downstream code (the TUI, the PR body) doesn't need to hold a borrow on
+/// the `Repository` or the original `Commit`.
+#[derive(Debug, Clone)]
+pub struct CommitInfo {
+    pub short_id: String,
+    pub summary: String,
+}
+
+impl CommitInfo {
+    fn from_commit(commit: &Commit) -> Self {
+        let summary = commit.summary().ok().flatten().unwrap_or("<no summary>");
+        Self {
+            short_id: commit.id().to_string()[..7].to_string(),
+            summary: summary.to_string(),
+        }
+    }
+}
+
 // Attributes each already-confirmed changed crate to the non-merge commits
 // whose own diff touched its path, purely for displaying to the user which
 // commits are likely responsible — this is informational, not authoritative
 // (see `get_changed_crates`).
-fn attribute_commits_to_crates<'a>(
-    repo: &'a Repository,
-    commits: &'a [Commit],
+fn attribute_commits_to_crates(
+    repo: &Repository,
+    commits: &[Commit],
     changed_crates: &HashSet<Crate>,
-) -> Result<HashMap<Crate, Vec<Commit<'a>>>> {
-    let mut attributed: HashMap<Crate, Vec<Commit>> = changed_crates
+) -> Result<HashMap<Crate, Vec<CommitInfo>>> {
+    let mut attributed: HashMap<Crate, Vec<CommitInfo>> = changed_crates
         .iter()
         .map(|c| (c.clone(), Vec::new()))
         .collect();
@@ -229,7 +255,7 @@ fn attribute_commits_to_crates<'a>(
                 attributed
                     .get_mut(cratem)
                     .expect("populated from changed_crates above")
-                    .push(commit.clone());
+                    .push(CommitInfo::from_commit(commit));
             }
         }
     }
@@ -237,13 +263,7 @@ fn attribute_commits_to_crates<'a>(
     for (c_crate, commits) in &attributed {
         debug!("Crate {} changed from the following commits:", c_crate.path);
         for c in commits {
-            debug!(
-                "{}",
-                c.summary()
-                    .context("get summary for commit")
-                    .unwrap()
-                    .unwrap()
-            );
+            debug!("{}", c.summary);
         }
     }
 
@@ -316,64 +336,13 @@ fn generate_changelog(tag: &str, crate_path: &str, release: &ReleaseConfig) -> R
     Ok(())
 }
 
-struct UpdatedCrate<'a, 'repo> {
-    ccrate: &'a Crate,
-    new_version: Version,
-    commits: &'a [Commit<'repo>],
+pub struct UpdatedCrate {
+    pub ccrate: Crate,
+    pub new_version: Version,
+    pub commits: Vec<CommitInfo>,
 }
 
-fn get_package_updates<'a, 'repo>(
-    ccrate: &'a Crate,
-    commits: &'repo [Commit],
-) -> Result<UpdatedCrate<'a, 'repo>> {
-    // suggest a list of version bumps for each service changed
-    let cur_ver = &ccrate.version;
-    let options: (Version, Version, Version) = (
-        cur_ver.bump_patch(),
-        cur_ver.bump_minor(),
-        cur_ver.bump_major(),
-    );
-
-    // show the commits responsible for flagging this crate, oldest first, so
-    // the user can sanity-check the suggested bump before picking one
-    println!("Commits that changed {}:", ccrate.name);
-    for c in commits {
-        let summary = c.summary().ok().flatten().unwrap_or("<no summary>");
-        println!("  {} {}", &c.id().to_string()[..7], summary);
-    }
-
-    // allow the user to override the version bump for each service
-    print!(
-        "updating {}\nselect one: \n0) bump patch to {}\n1) bump minor to {}\n2) bump major to {}\n> ",
-        ccrate.name, options.0, options.1, options.2
-    );
-    std::io::stdout().flush().context("flush stdout")?;
-    let mut s: String = String::new();
-    let _ = std::io::stdin()
-        .read_line(&mut s)
-        .context("read choice from user")?;
-    let s = s.replace('\n', "");
-    let s = s.parse::<usize>().context("parse selection")?;
-
-    let selected = match s {
-        0 => options.0,
-        1 => options.1,
-        2 => options.2,
-        _ => return Err(Error::msg("Not a valid selection")),
-    };
-    debug!("User selected: {}", selected);
-
-    Ok(UpdatedCrate {
-        ccrate,
-        new_version: selected,
-        commits,
-    })
-}
-
-fn update_package(
-    updated_crate: &UpdatedCrate<'_, '_>,
-    release_config: &ReleaseConfig,
-) -> Result<()> {
+fn update_package(updated_crate: &UpdatedCrate, release_config: &ReleaseConfig) -> Result<()> {
     // create a backup of the current Cargo.toml
     let real_file = format!("{}/Cargo.toml", updated_crate.ccrate.path);
     let tmp_file = format!("{}/Cargo.toml.bak", updated_crate.ccrate.path);
@@ -461,7 +430,7 @@ async fn open_pr(
     repo: &Repository,
     release: &ReleaseConfig,
     token: &str,
-    updated_crates: &[UpdatedCrate<'_, '_>],
+    updated_crates: &[UpdatedCrate],
 ) -> Result<()> {
     let head = repo.head().context("get branch head")?;
     let branch = git2::Branch::wrap(head);
@@ -504,23 +473,18 @@ async fn open_pr(
     Ok(())
 }
 
-fn get_pr_title_and_description(
-    updated_crates: &[UpdatedCrate<'_, '_>],
-) -> Result<(String, String)> {
-    fn bump_line(c: &UpdatedCrate<'_, '_>) -> String {
+fn get_pr_title_and_description(updated_crates: &[UpdatedCrate]) -> Result<(String, String)> {
+    fn bump_line(c: &UpdatedCrate) -> String {
         format!(
             "chore: bumping {} from {} to {}",
             c.ccrate.name, c.ccrate.version.version, c.new_version
         )
     }
 
-    fn commit_list(c: &UpdatedCrate<'_, '_>) -> String {
+    fn commit_list(c: &UpdatedCrate) -> String {
         c.commits
             .iter()
-            .map(|commit| {
-                let summary = commit.summary().ok().flatten().unwrap_or("<no summary>");
-                format!("- {} {}", &commit.id().to_string()[..7], summary)
-            })
+            .map(|commit| format!("- {} {}", commit.short_id, commit.summary))
             .collect::<Vec<_>>()
             .join("\n")
     }
