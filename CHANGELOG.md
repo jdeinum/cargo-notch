@@ -1,3 +1,13 @@
+## [0.1.18] - 2026-07-14
+
+### 🐛 Bug Fixes
+
+- Correct parsing for single crates
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Stable for builds
+- No more workspace
 ## [0.1.17] - 2026-07-14
 
 ### 🚀 Features
