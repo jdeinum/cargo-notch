@@ -111,4 +111,4 @@ See [CONFIGURATION.md](./CONFIGURATION.md)
 
 ## Changelog
 
-See [CHANGELOG.md](./crates/cargo-notch/CHANGELOG.md)
+See [CHANGELOG.md](./CHANGELOG.md)
