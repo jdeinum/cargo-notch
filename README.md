@@ -18,13 +18,25 @@
     </a>
 </p></div>
 
-Notch is designed to be an ultra simple build tool that versions against a
-ground source branch for your repository. The goal is to provide a simple
-interface that allows you to version your new releases, generate a
+Notch is designed to be an ultra simple build tool for rust that versions
+against a ground source branch for your repository. The goal is to provide a
+simple interface that allows you to version your new releases, generate a
 [changelog](https://git-cliff.org/), open a PR, and create git tags for new
 releases.
 
 If you have ideas, please create an issue!
+
+## Who is Notch for?
+
+Notch is ideal for teams already practicing trunk based development that
+want to retain control of deciding version bumps manually. To have notch
+automatically start builds, you also need a way of calling notch with the
+current HEAD and previous HEAD so it can find which packages in your project
+actually changed.
+
+I built Notch to help speed up my builds for Annona, a service based project
+where most workspace members end up as a docker image to be consumed by
+downstream consumers.
 
 ## Roadmap
 
@@ -36,6 +48,8 @@ NOTE: I am still working on the alpha, please do not use this yet!
 - ✅ Working CLI - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
 - ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
 - ✅ Working TUI - [79ce715](https://github.com/jdeinum/notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
+- ☑️ Contention Handling
+- ☑️ Test Harness
 - ☑️ Release v1.0.0
 - ☑️ Auto versioning option
 - ☑️ Auto merge option
