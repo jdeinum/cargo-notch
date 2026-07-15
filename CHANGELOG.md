@@ -1,3 +1,8 @@
+## [0.1.19] - 2026-07-15
+
+### 🚀 Features
+
+- Handle multiple notch calls on the same branch
 ## [0.1.18] - 2026-07-14
 
 ### 🐛 Bug Fixes
