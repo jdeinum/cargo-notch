@@ -4,6 +4,7 @@ pub(crate) mod pr;
 pub(crate) mod tag;
 pub(crate) mod workspace;
 
+use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use error::Result;
 
@@ -24,9 +25,8 @@ struct Cli {
 enum Commands {
     /// Bump versions, update changelogs, and open a release PR for changed crates
     Pr {
-        /// GitHub token used to push the branch and open the PR
-        #[arg(short, long)]
-        token: String,
+        // We used to have the GitHub token here, but its not good to expose it so we'll move it to
+        // the config, and just assert its present when we parse the command
     },
     /// Tag crates whose version changed between two commits
     Tag {
@@ -47,7 +47,7 @@ enum Commands {
 pub fn run() -> Result<()> {
     let CargoCli::Notch(cli) = CargoCli::parse();
     match cli.command {
-        Commands::Pr { token } => pr::run(&token),
-        Commands::Tag { old, new } => tag::run(&old, &new),
+        Commands::Pr {} => pr::run().context("run pr"),
+        Commands::Tag { old, new } => tag::run(&old, &new).context("run tag"),
     }
 }

@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use anyhow::Context;
 use config::{Environment, File, FileFormat};
 use git2::Repository;
+use secrecy::SecretString;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -19,6 +20,8 @@ pub struct RepoConfig {
     pub owner: Option<String>,
     /// Overrides the repo name detected from the `origin` remote.
     pub name: Option<String>,
+    /// Github token
+    pub token: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
