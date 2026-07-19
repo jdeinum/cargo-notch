@@ -1,3 +1,8 @@
+## [0.1.20] - 2026-07-19
+
+### 🐛 Bug Fixes
+
+- Remove token from cli
 ## [0.1.19] - 2026-07-15
 
 ### 🚀 Features

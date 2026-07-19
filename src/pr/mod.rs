@@ -10,6 +10,7 @@ use git2::{
     Signature, Sort,
 };
 use octocrab::Octocrab;
+use secrecy::ExposeSecret;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -23,10 +24,14 @@ const NOTCH_COMMITTER_NAME: &str = "notch";
 const NOTCH_COMMITTER_EMAIL: &str = "notch@noreply.notch-release";
 const NOTCH_TRAILER_KEY: &str = "Notch-Bump";
 
-pub fn run(token: &str) -> Result<()> {
+pub fn run() -> Result<()> {
     let pwd = std::env::current_dir().context("get current dir")?;
     let cleaned_members = get_cleaned_members(&pwd).context("get cleaned members")?;
     let config = config::load(&pwd).context("load notch.toml")?;
+
+    let Some(token) = config.repo.token.clone() else {
+        return Err(Error::msg("No token provided"));
+    };
 
     let repo: Repository = Repository::init(".").context("open repo")?;
     let (owner, repo_name) =
@@ -105,7 +110,7 @@ pub fn run(token: &str) -> Result<()> {
         &repo_name,
         &repo,
         &config.release,
-        token,
+        token.expose_secret(),
         &res,
     ))
     .context("open PR on runtime")?;

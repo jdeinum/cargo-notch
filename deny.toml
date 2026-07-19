@@ -38,4 +38,5 @@ skip = [
     { crate = "getrandom" },
     { crate = "untrusted" },
     { crate = "hashbrown" },
+    { crate = "syn" },
 ]
