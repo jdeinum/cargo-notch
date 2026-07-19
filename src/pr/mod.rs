@@ -547,11 +547,7 @@ async fn open_pr(
         .await
         .context("create PR")?;
 
-    println!(
-        "Opened PR #{}: {}",
-        pr.number.unwrap(),
-        pr.html_url.unwrap()
-    );
+    println!("Opened PR #{}: {}", pr.number, pr.html_url.unwrap());
     Ok(())
 }
 
