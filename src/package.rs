@@ -122,8 +122,10 @@ mod tests {
     // reproduces the same mismatch without having to chdir the test process.
     #[test]
     fn non_canonical_dir_still_normalizes_root_to_dot() {
-        let dir =
-            std::env::temp_dir().join(format!("notch-package-test-relative-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "notch-package-test-relative-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::write(
             dir.join("Cargo.toml"),
