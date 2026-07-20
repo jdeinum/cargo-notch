@@ -43,7 +43,11 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Package>> {
     let packages = metadata.packages;
     debug!("Members: {members:?}");
 
-    let dir_str = dir.to_str().unwrap();
+    // Strip against the workspace root cargo itself reports, not the caller's
+    // `dir`: cargo always emits member ids as absolute paths, so a relative or
+    // non-canonical `dir` (like the "." run() passes) would never prefix-match
+    // and every member would silently keep its absolute path.
+    let root = metadata.workspace_root.as_str();
 
     // clean up the members
     let cleaned_members: Vec<Package> = members
@@ -64,7 +68,7 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Package>> {
             // absolute path (which would never prefix-match the relative
             // paths in a git diff)
             let relative = raw_path
-                .strip_prefix(dir_str)
+                .strip_prefix(root)
                 .map_or(raw_path.as_str(), |rest| rest.trim_start_matches('/'));
             let path = if relative.is_empty() { "." } else { relative }.to_string();
 
@@ -110,6 +114,30 @@ mod tests {
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].path, ".");
         assert_eq!(members[0].name, "root-test-crate");
+    }
+
+    // `run()` invokes this with the relative dir "." — the caller's `dir` never
+    // literally prefixes the absolute member paths cargo reports, so the
+    // normalization must not depend on it. A non-canonical dir (`{tmp}/.`)
+    // reproduces the same mismatch without having to chdir the test process.
+    #[test]
+    fn non_canonical_dir_still_normalizes_root_to_dot() {
+        let dir =
+            std::env::temp_dir().join(format!("notch-package-test-relative-{}", std::process::id()));
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"root-test-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        fs::write(dir.join("src/lib.rs"), "").unwrap();
+
+        let members = get_cleaned_members(&dir.join("."));
+        fs::remove_dir_all(&dir).unwrap();
+        let members = members.unwrap();
+
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].path, ".");
     }
 
     // A workspace member nested under `dir` (rather than sitting at the root
