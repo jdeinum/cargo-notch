@@ -26,8 +26,7 @@ pub fn tag(old: Option<Version>, new: Option<Version>) -> Result<Option<Version>
 }
 
 pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
-    let pwd = std::env::current_dir().context("get current dir")?;
-    let config = config::load(&pwd).context("load notch.toml")?;
+    let config = config::load().context("load notch.toml")?;
 
     let old_members = get_cleaned_members_in_commit(old_commit).context("get crate members")?;
     let new_members = get_cleaned_members_in_commit(new_commit).context("get crate members")?;

@@ -18,26 +18,6 @@ pub struct MyVersion {
     pub version: Version,
 }
 
-impl MyVersion {
-    pub fn bump_patch(&self) -> Version {
-        let mut new = self.version.clone();
-        new.patch += 1;
-        new
-    }
-
-    pub fn bump_minor(&self) -> Version {
-        let mut new = self.version.clone();
-        new.minor += 1;
-        new
-    }
-
-    pub fn bump_major(&self) -> Version {
-        let mut new = self.version.clone();
-        new.major += 1;
-        new
-    }
-}
-
 // get the list of crates in the workspace rooted at `dir`
 pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
     let metadata = MetadataCommand::new()

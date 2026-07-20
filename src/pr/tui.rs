@@ -1,6 +1,6 @@
-use super::{CommitInfo, UpdatedCrate};
 use crate::error::Result;
-use crate::workspace::Crate;
+use crate::pr::run::UpdatedCrate;
+use crate::pr::traits::{CommitInfo, Package};
 use anyhow::Context;
 use cargo_metadata::semver::Version;
 use ratatui::DefaultTerminal;
@@ -10,6 +10,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Bump {
@@ -40,7 +41,7 @@ enum Signal {
 /// A changed package plus the version bump options the user can pick between,
 /// as shown in one row of the TUI's package list.
 pub struct PackageItem {
-    ccrate: Crate,
+    package: Package,
     commits: Vec<CommitInfo>,
     patch: Version,
     minor: Version,
@@ -49,13 +50,12 @@ pub struct PackageItem {
 }
 
 impl PackageItem {
-    pub fn new(ccrate: Crate, commits: Vec<CommitInfo>) -> Self {
-        let cur = &ccrate.version;
-        let patch = cur.bump_patch();
-        let minor = cur.bump_minor();
-        let major = cur.bump_major();
+    pub fn new(package: Package, commits: Vec<CommitInfo>) -> Self {
+        let patch = package.bump_patch();
+        let minor = package.bump_minor();
+        let major = package.bump_major();
         Self {
-            ccrate,
+            package,
             commits,
             patch,
             minor,
@@ -64,8 +64,8 @@ impl PackageItem {
         }
     }
 
-    pub const fn ccrate(&self) -> &Crate {
-        &self.ccrate
+    pub const fn package(&self) -> &Package {
+        &self.package
     }
 
     const fn version_for(&self, bump: Bump) -> &Version {
@@ -79,12 +79,12 @@ impl PackageItem {
     // "{name}  {old} -> {new}" once a bump is picked, else "{name}  {old} -> ?"
     // — shown on the package list so every row's bump is visible at a glance.
     fn row_label(&self) -> String {
-        let current = &self.ccrate.version.version;
+        let current = &self.package.version;
         let target = self.selected.map_or_else(
             || "?".to_string(),
             |bump| self.version_for(bump).to_string(),
         );
-        format!("{}  {current} -> {target}", self.ccrate.name)
+        format!("{}  {current} -> {target}", self.package.name)
     }
 
     // Red until a bump is picked, green once it is — the row's own color is
@@ -203,7 +203,7 @@ impl App {
                 let bump = pkg.selected?;
                 let new_version = pkg.version_for(bump).clone();
                 Some(UpdatedCrate {
-                    ccrate: pkg.ccrate,
+                    package: pkg.package,
                     new_version,
                     commits: pkg.commits,
                 })
@@ -254,7 +254,7 @@ impl App {
 
         let mut lines = vec![Line::from(format!(
             "{}  (current {})",
-            pkg.ccrate.name, pkg.ccrate.version.version
+            pkg.package.name, pkg.package.version
         ))];
         for bump in Bump::ALL {
             let marker = if pkg.selected == Some(bump) {
@@ -277,7 +277,7 @@ impl App {
         } else {
             pkg.commits
                 .iter()
-                .map(|c| Line::from(format!("{} {}", c.short_id, c.summary)))
+                .map(|c| Line::from(format!("{} {}", c.short_id(), c.summary)))
                 .collect()
         };
         Paragraph::new(commit_lines)
@@ -304,10 +304,16 @@ impl App {
     }
 }
 
-/// Runs the interactive bump-selection TUI over `packages`. Returns `None`
+/// Runs the interactive bump-selection TUI over `changed`. Returns `None`
 /// if the user cancelled (nothing should be written to disk), or the
 /// confirmed selections otherwise.
-pub fn run(packages: Vec<PackageItem>) -> Result<Option<Vec<UpdatedCrate>>> {
+pub fn run(changed: HashMap<Package, Vec<CommitInfo>>) -> Result<Option<Vec<UpdatedCrate>>> {
+    let mut packages: Vec<PackageItem> = changed
+        .into_iter()
+        .map(|(package, commits)| PackageItem::new(package, commits))
+        .collect();
+    packages.sort_by(|a, b| a.package().name.cmp(&b.package().name));
+
     let mut app = App::new(packages);
 
     let mut terminal = ratatui::init();
@@ -324,16 +330,13 @@ pub fn run(packages: Vec<PackageItem>) -> Result<Option<Vec<UpdatedCrate>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::MyVersion;
 
     fn package(name: &str, version: &str) -> PackageItem {
         PackageItem::new(
-            Crate {
+            Package {
                 path: name.to_string(),
                 name: name.to_string(),
-                version: MyVersion {
-                    version: Version::parse(version).unwrap(),
-                },
+                version: Version::parse(version).unwrap(),
             },
             Vec::new(),
         )
