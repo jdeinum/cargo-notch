@@ -1,3 +1,9 @@
+## [0.1.22] - 2026-07-20
+
+### 📚 Documentation
+
+- Update roadmap
+- No more auto merge
 ## [0.1.21] - 2026-07-20
 
 ### 🚀 Features
