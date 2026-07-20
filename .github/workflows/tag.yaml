@@ -37,7 +37,7 @@ jobs:
 
       - name: Install cargo-notch
         if: steps.notch-cache.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/jdeinum/notch cargo-notch
+        run: cargo install --git https://github.com/jdeinum/cargo-notch cargo-notch
 
       - name: Compute new tags
         run: |
