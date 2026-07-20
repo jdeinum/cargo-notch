@@ -3,14 +3,16 @@
 Install `cargo-notch` directly from git:
 
 ```bash
-cargo install --git https://github.com/jdeinum/notch cargo-notch
+cargo install --git https://github.com/jdeinum/cargo-notch cargo-notch
 ```
 
 This installs the `cargo notch` subcommand, which you can then run from within
-any repository:
+any repository. The GitHub token isn't a CLI flag (that would leak into shell
+history/process listings) — set it via the `NOTCH__REPO__TOKEN` environment
+variable, per [CONFIGURATION.md](./CONFIGURATION.md):
 
 ```bash
-cargo notch pr --token <github-token>
+NOTCH__REPO__TOKEN=<github-token> cargo notch pr
 ```
 
 ## CI: creating tags
@@ -34,7 +36,7 @@ permissions:
 
 jobs:
   tag:
-    uses: jdeinum/notch/.github/workflows/tag.yaml@master
+    uses: jdeinum/cargo-notch/.github/workflows/tag.yaml@master
     permissions:
       contents: write
     secrets:

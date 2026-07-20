@@ -1,6 +1,6 @@
 use crate::config::{self, ReleaseConfig};
 use crate::error::{Error, Result};
-use crate::workspace::{Crate, get_cleaned_members};
+use crate::package::{Package, get_cleaned_members};
 use anyhow::Context;
 use cargo_metadata::semver::Version;
 use git2::{BranchType, Repository, WorktreePruneOptions, build::CheckoutBuilder};
@@ -26,11 +26,17 @@ pub fn tag(old: Option<Version>, new: Option<Version>) -> Result<Option<Version>
 }
 
 pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
-    let pwd = std::env::current_dir().context("get current dir")?;
-    let config = config::load(&pwd).context("load notch.toml")?;
+    let config = config::load().context("load notch.toml")?;
 
-    let old_members = get_cleaned_members_in_commit(old_commit).context("get crate members")?;
-    let new_members = get_cleaned_members_in_commit(new_commit).context("get crate members")?;
+    let repo = Repository::open(".").context("open repo")?;
+    let members_source = WorktreeMembers::new(repo);
+
+    let old_members = members_source
+        .get(old_commit)
+        .context("get crate members")?;
+    let new_members = members_source
+        .get(new_commit)
+        .context("get crate members")?;
 
     for tag_name in compute_tags(&old_members, &new_members, &config.release)? {
         println!("{tag_name}");
@@ -39,33 +45,90 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reads a workspace's Cargo package versions as they existed at a given commit —
+/// the one piece of `tag`'s logic that actually needs git, kept behind a trait so
+/// `compute_tags`/`tag` (the actual version-diffing rules) stay git-agnostic and
+/// easy to test without a real repo.
+pub trait MembersAtCommit {
+    fn get(&self, commit: &str) -> Result<Vec<Package>>;
+}
+
+/// Reads workspace members at a commit by checking it out into a throwaway git worktree,
+/// without disturbing the caller's current checkout.
+pub struct WorktreeMembers {
+    repo: Repository,
+}
+
+impl WorktreeMembers {
+    pub const fn new(repo: Repository) -> Self {
+        Self { repo }
+    }
+}
+
+impl MembersAtCommit for WorktreeMembers {
+    fn get(&self, commit: &str) -> Result<Vec<Package>> {
+        let oid = self
+            .repo
+            .revparse_single(commit)
+            .context("resolve commit")?
+            .peel_to_commit()
+            .context("peel to commit")?
+            .id();
+
+        // name has to be unique per commit so concurrent/old worktrees don't collide
+        let name = format!("notch-tag-{oid}");
+        let path = std::env::temp_dir().join(&name);
+
+        let worktree = self
+            .repo
+            .worktree(&name, &path, None)
+            .context("create worktree")?;
+
+        let result = (|| -> Result<Vec<Package>> {
+            let worktree_repo =
+                Repository::open_from_worktree(&worktree).context("open worktree repo")?;
+            worktree_repo
+                .set_head_detached(oid)
+                .context("detach worktree head")?;
+            worktree_repo
+                .checkout_head(Some(CheckoutBuilder::new().force()))
+                .context("checkout commit in worktree")?;
+
+            get_cleaned_members(&path).context("get cleaned members from worktree")
+        })();
+
+        // always clean up the worktree and its scratch branch, even if the above failed
+        let mut prune_opts = WorktreePruneOptions::new();
+        prune_opts.valid(true).working_tree(true);
+        worktree
+            .prune(Some(&mut prune_opts))
+            .context("prune worktree")?;
+
+        if let Ok(mut branch) = self.repo.find_branch(&name, BranchType::Local) {
+            branch.delete().context("delete scratch worktree branch")?;
+        }
+
+        result
+    }
+}
+
 // determines, for each workspace member present in either commit, whether a
 // tag should be created, and formats it using the real Cargo package name
-// (not the workspace-relative directory, which may differ — see workspace.rs)
+// (not the workspace-relative directory, which may differ — see package.rs)
 fn compute_tags(
-    old_members: &[Crate],
-    new_members: &[Crate],
+    old_members: &[Package],
+    new_members: &[Package],
     release: &ReleaseConfig,
 ) -> Result<Vec<String>> {
     // keyed by workspace-relative path (stable identity across commits; the
     // Cargo package name is only needed for the emitted tag)
     let old_packages: HashMap<&str, (&str, Version)> = old_members
         .iter()
-        .map(|x| {
-            (
-                x.path.as_str(),
-                (x.name.as_str(), x.version.version.clone()),
-            )
-        })
+        .map(|x| (x.path.as_str(), (x.name.as_str(), x.version.clone())))
         .collect();
     let new_packages: HashMap<&str, (&str, Version)> = new_members
         .iter()
-        .map(|x| {
-            (
-                x.path.as_str(),
-                (x.name.as_str(), x.version.version.clone()),
-            )
-        })
+        .map(|x| (x.path.as_str(), (x.name.as_str(), x.version.clone())))
         .collect();
 
     let paths: HashSet<&str> = old_packages
@@ -96,67 +159,16 @@ fn compute_tags(
     Ok(tags)
 }
 
-// checks out `commit` into a throwaway worktree so we can read the workspace's
-// Cargo.toml files as they existed at that point in history, without disturbing
-// the caller's current checkout.
-fn get_cleaned_members_in_commit(commit: &str) -> Result<Vec<Crate>> {
-    let repo = Repository::open(".").context("open repo")?;
-
-    let oid = repo
-        .revparse_single(commit)
-        .context("resolve commit")?
-        .peel_to_commit()
-        .context("peel to commit")?
-        .id();
-
-    // name has to be unique per commit so concurrent/old worktrees don't collide
-    let name = format!("notch-tag-{oid}");
-    let path = std::env::temp_dir().join(&name);
-
-    let worktree = repo
-        .worktree(&name, &path, None)
-        .context("create worktree")?;
-
-    let result = (|| -> Result<Vec<Crate>> {
-        let worktree_repo =
-            Repository::open_from_worktree(&worktree).context("open worktree repo")?;
-        worktree_repo
-            .set_head_detached(oid)
-            .context("detach worktree head")?;
-        worktree_repo
-            .checkout_head(Some(CheckoutBuilder::new().force()))
-            .context("checkout commit in worktree")?;
-
-        get_cleaned_members(&path).context("get cleaned members from worktree")
-    })();
-
-    // always clean up the worktree and its scratch branch, even if the above failed
-    let mut prune_opts = WorktreePruneOptions::new();
-    prune_opts.valid(true).working_tree(true);
-    worktree
-        .prune(Some(&mut prune_opts))
-        .context("prune worktree")?;
-
-    if let Ok(mut branch) = repo.find_branch(&name, BranchType::Local) {
-        branch.delete().context("delete scratch worktree branch")?;
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::MyVersion;
     use std::assert_matches;
 
-    fn member(path: &str, name: &str, version: &str) -> Crate {
-        Crate {
+    fn member(path: &str, name: &str, version: &str) -> Package {
+        Package {
             path: path.to_string(),
             name: name.to_string(),
-            version: MyVersion {
-                version: Version::parse(version).unwrap(),
-            },
+            version: Version::parse(version).unwrap(),
         }
     }
 

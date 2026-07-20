@@ -1,20 +1,20 @@
-# Notch
+# cargo-notch
 
 <div align="center"><p>
-    <a href="https://github.com/jdeinum/notch/tags">
-      <img alt="Current tag" src="https://img.shields.io/github/v/tag/jdeinum/notch?style=flat&logo=semanticrelease&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41&sort=semver" />
+    <a href="https://github.com/jdeinum/cargo-notch/tags">
+      <img alt="Current tag" src="https://img.shields.io/github/v/tag/jdeinum/cargo-notch?style=flat&logo=semanticrelease&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41&sort=semver" />
     </a>
-    <a href="https://github.com/jdeinum/notch/pulse">
-      <img alt="Last commit" src="https://img.shields.io/github/last-commit/jdeinum/notch?style=flat&logo=git&color=8bd5ca&logoColor=D9E0EE&labelColor=302D41"/>
+    <a href="https://github.com/jdeinum/cargo-notch/pulse">
+      <img alt="Last commit" src="https://img.shields.io/github/last-commit/jdeinum/cargo-notch?style=flat&logo=git&color=8bd5ca&logoColor=D9E0EE&labelColor=302D41"/>
     </a>
-    <a href="https://github.com/jdeinum/notch/actions/workflows/check.yaml">
-      <img alt="Check" src="https://img.shields.io/github/actions/workflow/status/jdeinum/notch/check.yaml?style=flat&label=Check&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
+    <a href="https://github.com/jdeinum/cargo-notch/actions/workflows/check.yaml">
+      <img alt="Check" src="https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/check.yaml?style=flat&label=Check&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
     </a>
-    <a href="https://github.com/jdeinum/notch/actions/workflows/test.yaml">
-      <img alt="Test" src="https://img.shields.io/github/actions/workflow/status/jdeinum/notch/test.yaml?style=flat&label=Test&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
+    <a href="https://github.com/jdeinum/cargo-notch/actions/workflows/test.yaml">
+      <img alt="Test" src="https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/test.yaml?style=flat&label=Test&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
     </a>
-    <a href="https://github.com/jdeinum/notch/actions/workflows/audit.yaml">
-      <img alt="Audit" src="https://img.shields.io/github/actions/workflow/status/jdeinum/notch/audit.yaml?style=flat&label=Audit&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
+    <a href="https://github.com/jdeinum/cargo-notch/actions/workflows/audit.yaml">
+      <img alt="Audit" src="https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/audit.yaml?style=flat&label=Audit&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
     </a>
 </p></div>
 
@@ -42,13 +42,13 @@ downstream consumers.
 
 NOTE: I am still working on the alpha, please do not use this yet!
 
-- ✅ Initial prototype - [39d5eea](https://github.com/jdeinum/notch/commit/39d5eea1943a79ad88419e876f41917d15ed906f)
-- ✅ Github action that creates tags from merged PRs matching specs - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
-- ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
-- ✅ Working CLI - [085c478](https://github.com/jdeinum/notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
-- ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
-- ✅ Working TUI - [79ce715](https://github.com/jdeinum/notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
-- ☑️ Contention Handling
+- ✅ Initial prototype - [39d5eea](https://github.com/jdeinum/cargo-notch/commit/39d5eea1943a79ad88419e876f41917d15ed906f)
+- ✅ Github action that creates tags from merged PRs matching specs - [085c478](https://github.com/jdeinum/cargo-notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
+- ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/cargo-notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
+- ✅ Working CLI - [085c478](https://github.com/jdeinum/cargo-notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
+- ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/cargo-notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
+- ✅ Working TUI - [79ce715](https://github.com/jdeinum/cargo-notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
+- ✅ Contention Handling - [79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91)
 - ☑️ Test Harness
 - ☑️ Release v1.0.0
 - ☑️ Auto versioning option
@@ -67,7 +67,8 @@ git checkout -b feature/add_two
 git commit -m "feat: added the add_two function"
 
 # bump versions, update changelogs, and open a release PR for changed crates
-cargo notch pr --token <github-token>
+# (the token is read from config/env, not passed on the command line — see CONFIGURATION.md)
+NOTCH__REPO__TOKEN=<github-token> cargo notch pr
 
 # merge PR on github or from cli (not required if auto-merge is used)
 gh pr merge <pr_number>

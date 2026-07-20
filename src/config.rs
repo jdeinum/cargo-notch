@@ -60,10 +60,10 @@ impl ReleaseConfig {
 /// Loads config from `notch.toml` in `dir` (if present), then applies
 /// `NOTCH__`-prefixed environment variable overrides, e.g.
 /// `NOTCH__RELEASE__DEFAULT_BRANCH=main` overrides `[release] default_branch`.
-pub fn load(dir: &Path) -> Result<Config> {
+pub fn load() -> Result<Config> {
     let raw = config::Config::builder()
         .add_source(
-            File::from(dir.join("notch.toml"))
+            File::from(Path::new("notch.toml"))
                 .format(FileFormat::Toml)
                 .required(false),
         )
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn shipped_notch_toml_parses_to_defaults() {
-        let config = load(Path::new(".")).expect("shipped notch.toml must load and parse");
+        let config = load().expect("shipped notch.toml must load and parse");
         assert_eq!(config.repo.owner, None);
         assert_eq!(config.repo.name, None);
         assert_eq!(config.release.default_branch, "master");
