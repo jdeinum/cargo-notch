@@ -2,9 +2,9 @@ pub(crate) mod cli;
 pub(crate) mod cmd;
 pub(crate) mod config;
 pub(crate) mod error;
+pub(crate) mod package;
 pub(crate) mod pr;
 pub(crate) mod tag;
-pub(crate) mod workspace;
 
 use crate::{
     cli::{CargoCli, Commands},

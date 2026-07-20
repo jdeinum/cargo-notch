@@ -1,6 +1,7 @@
 use crate::error::Result;
+use crate::package::Package;
 use crate::pr::run::UpdatedCrate;
-use crate::pr::traits::{CommitInfo, Package};
+use crate::pr::traits::CommitInfo;
 use anyhow::Context;
 use cargo_metadata::semver::Version;
 use ratatui::DefaultTerminal;

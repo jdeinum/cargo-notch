@@ -190,8 +190,9 @@ fn get_pr_title_and_description(updated_crates: &[UpdatedCrate]) -> Result<(Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::package::Package;
     use crate::pr::assign::find_last_notch_commit;
-    use crate::pr::traits::Package;
+    use crate::pr::traits::CommitInfo;
     use cargo_metadata::semver::Version;
     use git2::Oid;
     use std::fs;
@@ -359,5 +360,50 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(repo.workdir().unwrap());
+    }
+
+    #[test]
+    fn errors_when_no_updated_crates() {
+        let result = get_pr_title_and_description(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn single_crate_title_is_the_bump_line() {
+        let updated = vec![updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0))];
+        let (title, body) = get_pr_title_and_description(&updated).unwrap();
+
+        assert_eq!(title, "chore: bumping foo from 1.0.0 to 1.1.0");
+        assert!(body.contains("chore: bumping foo from 1.0.0 to 1.1.0"));
+    }
+
+    #[test]
+    fn multiple_crates_get_a_generic_title() {
+        let updated = vec![
+            updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0)),
+            updated_crate("bar", (0, 4, 0), Version::new(0, 5, 0)),
+        ];
+        let (title, _body) = get_pr_title_and_description(&updated).unwrap();
+
+        assert_eq!(title, "chore: bumping package versions");
+    }
+
+    #[test]
+    fn body_lists_each_crates_commits_by_short_id() {
+        let mut updated = updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0));
+        updated.commits = vec![
+            CommitInfo {
+                summary: "feat: add a thing".to_string(),
+                sha1: "1234567890abcdef".to_string(),
+            },
+            CommitInfo {
+                summary: "fix: fix a thing".to_string(),
+                sha1: "abcdef1234567890".to_string(),
+            },
+        ];
+        let (_title, body) = get_pr_title_and_description(&[updated]).unwrap();
+
+        assert!(body.contains("- 1234567 feat: add a thing"));
+        assert!(body.contains("- abcdef1 fix: fix a thing"));
     }
 }

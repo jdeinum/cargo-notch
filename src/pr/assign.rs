@@ -1,7 +1,8 @@
 use crate::config::ReleaseConfig;
 use crate::error::{Error, Result};
+use crate::package::Package;
 use crate::pr::git::{changelog_range, is_notch_commit, ssh_credentials};
-use crate::pr::traits::{CommitInfo, Package, PackageCommits};
+use crate::pr::traits::{CommitInfo, PackageCommits};
 use anyhow::Context;
 use git2::{Commit, DiffOptions, FetchOptions, Oid, Repository, Sort};
 use std::collections::{HashMap, HashSet};
@@ -243,5 +244,189 @@ impl From<&Commit<'_>> for CommitInfo {
             summary: summary.to_string(),
             sha1: value.id().to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cargo_metadata::semver::Version;
+    use git2::Signature;
+    use std::fs;
+
+    fn init_repo(name: &str) -> Repository {
+        let dir =
+            std::env::temp_dir().join(format!("notch-assign-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        Repository::init(&dir).unwrap()
+    }
+
+    fn sig() -> Signature<'static> {
+        Signature::now("test", "test@example.com").unwrap()
+    }
+
+    // Writes `content` to `path` (relative to the repo's workdir, creating parent
+    // directories as needed), stages it on top of whatever's already indexed from prior
+    // calls, and commits with `parents`.
+    fn commit_file(repo: &Repository, path: &str, content: &str, parents: &[&Commit]) -> Oid {
+        let full_path = repo.workdir().unwrap().join(path);
+        fs::create_dir_all(full_path.parent().unwrap()).unwrap();
+        fs::write(&full_path, content).unwrap();
+
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(path)).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+
+        let sig = sig();
+        repo.commit(Some("HEAD"), &sig, &sig, "test commit", &tree, parents)
+            .unwrap()
+    }
+
+    fn package(path: &str) -> Package {
+        Package {
+            path: path.to_string(),
+            name: path.replace('/', "-"),
+            version: Version::new(0, 1, 0),
+        }
+    }
+
+    fn cleanup(repo: &Repository) {
+        let _ = fs::remove_dir_all(repo.workdir().unwrap());
+    }
+
+    #[test]
+    fn only_packages_whose_path_changed_are_returned() {
+        let repo = init_repo("changed-paths");
+        let c0 = commit_file(&repo, "crate-a/Cargo.toml", "a", &[]);
+        let c0_commit = repo.find_commit(c0).unwrap();
+        let base = commit_file(&repo, "crate-b/Cargo.toml", "b", &[&c0_commit]);
+        let base_commit = repo.find_commit(base).unwrap();
+        commit_file(&repo, "crate-a/src/lib.rs", "fn a() {}", &[&base_commit]);
+
+        // upstream ref points at `base`, before crate-a's src file was touched
+        repo.reference("refs/remotes/origin/master", base, true, "test")
+            .unwrap();
+
+        let packages = HashSet::from([package("crate-a"), package("crate-b")]);
+        let release = ReleaseConfig::default();
+
+        let changed = get_changed_packages(&repo, &release, packages, None).unwrap();
+
+        assert_eq!(changed, HashSet::from([package("crate-a")]));
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn root_package_is_always_considered_changed() {
+        let repo = init_repo("root-package");
+        let base = commit_file(&repo, "unrelated.txt", "x", &[]);
+
+        // HEAD == upstream, so the diff between them is empty
+        repo.reference("refs/remotes/origin/master", base, true, "test")
+            .unwrap();
+
+        let packages = HashSet::from([package(".")]);
+        let release = ReleaseConfig::default();
+
+        let changed = get_changed_packages(&repo, &release, packages, None).unwrap();
+
+        assert_eq!(changed, HashSet::from([package(".")]));
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn base_override_bypasses_upstream_ref_resolution() {
+        let repo = init_repo("base-override");
+        let c0 = commit_file(&repo, "crate-a/Cargo.toml", "a", &[]);
+        let marker_commit = repo.find_commit(c0).unwrap();
+        commit_file(&repo, "crate-a/src/lib.rs", "fn a() {}", &[&marker_commit]);
+
+        // no `origin` remote/ref configured at all — if the code tried to resolve
+        // `origin/master` here it would error out
+        let packages = HashSet::from([package("crate-a")]);
+        let release = ReleaseConfig::default();
+
+        let changed =
+            get_changed_packages(&repo, &release, packages, Some(&marker_commit)).unwrap();
+
+        assert_eq!(changed, HashSet::from([package("crate-a")]));
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn commits_are_attributed_to_the_package_whose_path_they_touch() {
+        let repo = init_repo("attribute-basic");
+        let c0 = commit_file(&repo, "crate-a/Cargo.toml", "a", &[]);
+        let c0_commit = repo.find_commit(c0).unwrap();
+        let c1 = commit_file(&repo, "crate-b/Cargo.toml", "b", &[&c0_commit]);
+        let c1_commit = repo.find_commit(c1).unwrap();
+        let c2 = commit_file(&repo, "crate-a/src/lib.rs", "fn a() {}", &[&c1_commit]);
+        let c2_commit = repo.find_commit(c2).unwrap();
+        let c3 = commit_file(&repo, "crate-b/src/lib.rs", "fn b() {}", &[&c2_commit]);
+
+        let commits = vec![repo.find_commit(c2).unwrap(), repo.find_commit(c3).unwrap()];
+        let changed = HashSet::from([package("crate-a"), package("crate-b")]);
+
+        let attributed = attribute_commits_to_packages(&repo, &commits, changed).unwrap();
+
+        assert_eq!(attributed[&package("crate-a")].len(), 1);
+        assert_eq!(attributed[&package("crate-b")].len(), 1);
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn merge_commits_are_excluded_from_attribution() {
+        let repo = init_repo("attribute-merge");
+        let base = commit_file(&repo, "crate-a/Cargo.toml", "a", &[]);
+        let base_commit = repo.find_commit(base).unwrap();
+        let side = commit_file(&repo, "crate-a/side.rs", "side", &[&base_commit]);
+        let side_commit = repo.find_commit(side).unwrap();
+
+        // A merge commit (2 parents) whose tree also touches crate-a — should still be
+        // excluded, since a merge's diff against a single parent isn't a faithful
+        // account of what the merge itself changed.
+        let merge_sig = sig();
+        let merge_tree = side_commit.tree().unwrap();
+        let merge_oid = repo
+            .commit(
+                Some("HEAD"),
+                &merge_sig,
+                &merge_sig,
+                "merge",
+                &merge_tree,
+                &[&side_commit, &base_commit],
+            )
+            .unwrap();
+
+        let commits = vec![
+            repo.find_commit(side).unwrap(),
+            repo.find_commit(merge_oid).unwrap(),
+        ];
+        let changed = HashSet::from([package("crate-a")]);
+
+        let attributed = attribute_commits_to_packages(&repo, &commits, changed).unwrap();
+
+        assert_eq!(attributed[&package("crate-a")].len(), 1);
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn root_package_gets_every_non_merge_commit() {
+        let repo = init_repo("attribute-root");
+        let c0 = commit_file(&repo, "unrelated-a.txt", "a", &[]);
+        let c0_commit = repo.find_commit(c0).unwrap();
+        let c1 = commit_file(&repo, "unrelated-b.txt", "b", &[&c0_commit]);
+        let c1_commit = repo.find_commit(c1).unwrap();
+        let c2 = commit_file(&repo, "unrelated-c.txt", "c", &[&c1_commit]);
+
+        let commits = vec![repo.find_commit(c1).unwrap(), repo.find_commit(c2).unwrap()];
+        let changed = HashSet::from([package(".")]);
+
+        let attributed = attribute_commits_to_packages(&repo, &commits, changed).unwrap();
+
+        assert_eq!(attributed[&package(".")].len(), 2);
+        cleanup(&repo);
     }
 }

@@ -1,6 +1,6 @@
 use crate::config::{self, ReleaseConfig};
 use crate::error::{Error, Result};
-use crate::workspace::{Crate, get_cleaned_members};
+use crate::package::{Package, get_cleaned_members};
 use anyhow::Context;
 use cargo_metadata::semver::Version;
 use git2::{BranchType, Repository, WorktreePruneOptions, build::CheckoutBuilder};
@@ -50,7 +50,7 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
 /// `compute_tags`/`tag` (the actual version-diffing rules) stay git-agnostic and
 /// easy to test without a real repo.
 pub trait MembersAtCommit {
-    fn get(&self, commit: &str) -> Result<Vec<Crate>>;
+    fn get(&self, commit: &str) -> Result<Vec<Package>>;
 }
 
 /// Reads workspace members at a commit by checking it out into a throwaway git worktree,
@@ -66,7 +66,7 @@ impl WorktreeMembers {
 }
 
 impl MembersAtCommit for WorktreeMembers {
-    fn get(&self, commit: &str) -> Result<Vec<Crate>> {
+    fn get(&self, commit: &str) -> Result<Vec<Package>> {
         let oid = self
             .repo
             .revparse_single(commit)
@@ -84,7 +84,7 @@ impl MembersAtCommit for WorktreeMembers {
             .worktree(&name, &path, None)
             .context("create worktree")?;
 
-        let result = (|| -> Result<Vec<Crate>> {
+        let result = (|| -> Result<Vec<Package>> {
             let worktree_repo =
                 Repository::open_from_worktree(&worktree).context("open worktree repo")?;
             worktree_repo
@@ -114,10 +114,10 @@ impl MembersAtCommit for WorktreeMembers {
 
 // determines, for each workspace member present in either commit, whether a
 // tag should be created, and formats it using the real Cargo package name
-// (not the workspace-relative directory, which may differ — see workspace.rs)
+// (not the workspace-relative directory, which may differ — see package.rs)
 fn compute_tags(
-    old_members: &[Crate],
-    new_members: &[Crate],
+    old_members: &[Package],
+    new_members: &[Package],
     release: &ReleaseConfig,
 ) -> Result<Vec<String>> {
     // keyed by workspace-relative path (stable identity across commits; the
@@ -164,8 +164,8 @@ mod tests {
     use super::*;
     use std::assert_matches;
 
-    fn member(path: &str, name: &str, version: &str) -> Crate {
-        Crate {
+    fn member(path: &str, name: &str, version: &str) -> Package {
+        Package {
             path: path.to_string(),
             name: name.to_string(),
             version: Version::parse(version).unwrap(),

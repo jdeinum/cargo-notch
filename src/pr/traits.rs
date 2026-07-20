@@ -1,34 +1,8 @@
-use crate::{config::ReleaseConfig, error::Result};
-use cargo_metadata::semver::Version;
+use crate::config::ReleaseConfig;
+use crate::error::Result;
+use crate::package::Package;
 use git2::Repository;
 use std::collections::{HashMap, HashSet};
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct Package {
-    pub name: String,
-    pub path: String,
-    pub version: Version,
-}
-
-impl Package {
-    pub fn bump_patch(&self) -> Version {
-        let mut new = self.version.clone();
-        new.patch += 1;
-        new
-    }
-
-    pub fn bump_minor(&self) -> Version {
-        let mut new = self.version.clone();
-        new.minor += 1;
-        new
-    }
-
-    pub fn bump_major(&self) -> Version {
-        let mut new = self.version.clone();
-        new.major += 1;
-        new
-    }
-}
 
 #[derive(Debug)]
 pub struct CommitInfo {

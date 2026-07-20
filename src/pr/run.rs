@@ -1,11 +1,11 @@
 use crate::cmd::run_command;
 use crate::config;
 use crate::error::{Error, Result};
+use crate::package::Package;
 use crate::pr::assign::WorktreeCommitAssigner;
 use crate::pr::git::{commit_changes, open_pr, push_current_branch};
 use crate::pr::packages::CargoPackager;
-use crate::pr::traits::{CommitInfo, Package};
-use crate::pr::traits::{PackageCommits, Packages};
+use crate::pr::traits::{CommitInfo, PackageCommits, Packages};
 use crate::pr::tui;
 use anyhow::Context;
 use cargo_metadata::semver::Version;
