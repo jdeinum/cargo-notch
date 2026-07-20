@@ -50,9 +50,8 @@ NOTE: I am still working on the alpha, please do not use this yet!
 - ✅ Working TUI - [79ce715](https://github.com/jdeinum/cargo-notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
 - ✅ Contention Handling - [79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91)
 - ✅ Test Harness - [9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681)
-- ☑️ Release v1.0.0
 - ☑️ Auto versioning option
-- ☑️ Auto merge option
+- ☑️ Release v1.0.0
 
 ## Example
 
@@ -70,7 +69,7 @@ git commit -m "feat: added the add_two function"
 # (the token is read from config/env, not passed on the command line — see CONFIGURATION.md)
 NOTCH__REPO__TOKEN=<github-token> cargo notch pr
 
-# merge PR on github or from cli (not required if auto-merge is used)
+# merge PR on github or from cli
 gh pr merge <pr_number>
 
 # notch gha notices the PR, sees version differences, creates tags
