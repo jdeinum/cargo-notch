@@ -1,3 +1,12 @@
+## [0.1.22] - 2026-07-20
+
+### 🐛 Bug Fixes
+
+- Calling multiple times updates the pr
+
+### 📚 Documentation
+
+- Readme
 ## [0.1.21] - 2026-07-20
 
 ### 🚀 Features
