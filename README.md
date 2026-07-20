@@ -48,7 +48,7 @@ NOTE: I am still working on the alpha, please do not use this yet!
 - ✅ Working CLI - [085c478](https://github.com/jdeinum/cargo-notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
 - ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/cargo-notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
 - ✅ Working TUI - [79ce715](https://github.com/jdeinum/cargo-notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
-- ☑️ Contention Handling
+- ✅ Contention Handling - [79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91)
 - ☑️ Test Harness
 - ☑️ Release v1.0.0
 - ☑️ Auto versioning option
