@@ -1,9 +1,11 @@
 use crate::config::ReleaseConfig;
 use crate::error::{Error, Result};
 use crate::package::Package;
-use crate::pr::git::{changelog_range, is_notch_commit, ssh_credentials};
+use crate::pr::git::{changelog_range, is_notch_commit, parse_bump_trailer, ssh_credentials};
+use crate::pr::run::UpdatedCrate;
 use crate::pr::traits::{CommitInfo, PackageCommits};
 use anyhow::Context;
+use cargo_metadata::semver::Version;
 use git2::{Commit, DiffOptions, FetchOptions, Oid, Repository, Sort};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -109,6 +111,62 @@ fn get_commits<'a>(repo: &'a Repository, release: &ReleaseConfig) -> Result<Vec<
 // diff against.
 pub(super) fn find_last_notch_commit<'a>(commits: &[Commit<'a>]) -> Option<Commit<'a>> {
     commits.iter().rev().find(|c| is_notch_commit(c)).cloned()
+}
+
+// Rebuilds an `UpdatedCrate` per bump that previous notch runs left in the upstream range, so a
+// rerun's PR body can describe the whole branch rather than just the newest delta. The versions
+// come from each bump commit's `Notch-Bump` trailer; the commits are the non-notch commits that
+// landed since the previous bump (or the range start), attributed by path as usual. Trailer
+// entries that don't parse, or name a crate that no longer exists, are skipped — those bumps
+// just don't get a section, they don't fail the run.
+pub fn prior_bump_sections(
+    repo: &Repository,
+    release: &ReleaseConfig,
+    packages: &HashSet<Package>,
+) -> Result<Vec<UpdatedCrate>> {
+    let all_commits = get_commits(repo, release).context("get commits")?;
+
+    let mut sections = Vec::new();
+    let mut pending: Vec<Commit> = Vec::new();
+    for commit in all_commits {
+        if !is_notch_commit(&commit) {
+            pending.push(commit);
+            continue;
+        }
+
+        let bumped: Vec<(Package, Version)> = parse_bump_trailer(&commit)
+            .into_iter()
+            .filter_map(|record| {
+                packages.iter().find(|p| p.name == record.name).map(|p| {
+                    (
+                        Package {
+                            version: record.old,
+                            ..p.clone()
+                        },
+                        record.new,
+                    )
+                })
+            })
+            .collect();
+
+        let changed: HashSet<Package> = bumped.iter().map(|(p, _)| p.clone()).collect();
+        let mut attributed = attribute_commits_to_packages(repo, &pending, changed)
+            .context("attribute commits to prior bumps")?;
+
+        for (package, new_version) in bumped {
+            let commits = attributed.remove(&package).unwrap_or_default();
+            sections.push(UpdatedCrate {
+                package,
+                new_version,
+                commits,
+            });
+        }
+        // even if the trailer yielded nothing, these commits belong to this bump — carrying them
+        // into the next section would misattribute them
+        pending.clear();
+    }
+
+    Ok(sections)
 }
 
 // Determines which packages actually differ between HEAD and `base_override` (if given — see
@@ -352,6 +410,49 @@ mod tests {
             get_changed_packages(&repo, &release, packages, Some(&marker_commit)).unwrap();
 
         assert_eq!(changed, HashSet::from([package("crate-a")]));
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn prior_bump_sections_recovers_bumps_from_trailers() {
+        let repo = init_repo("prior-bumps");
+        let base = commit_file(&repo, "crate-a/Cargo.toml", "a", &[]);
+        let base_commit = repo.find_commit(base).unwrap();
+        repo.reference("refs/remotes/origin/master", base, true, "test")
+            .unwrap();
+
+        // a human commit touching crate-a, then the bump commit a prior run made for it
+        let human = commit_file(&repo, "crate-a/src/lib.rs", "fn a() {}", &[&base_commit]);
+        let human_commit = repo.find_commit(human).unwrap();
+
+        let sig = crate::pr::git::notch_signature().unwrap();
+        let tree = human_commit.tree().unwrap();
+        let notch_oid = repo
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "chore(notch): changelog + version bump\n\nNotch-Bump: crate-a@0.1.0->0.2.0",
+                &tree,
+                &[&human_commit],
+            )
+            .unwrap();
+        let notch_commit = repo.find_commit(notch_oid).unwrap();
+
+        // a newer human commit after the bump belongs to the *next* run, not a prior section
+        commit_file(&repo, "crate-a/src/more.rs", "fn b() {}", &[&notch_commit]);
+
+        let packages = HashSet::from([package("crate-a")]);
+        let release = ReleaseConfig::default();
+
+        let sections = prior_bump_sections(&repo, &release, &packages).unwrap();
+
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].package.name, "crate-a");
+        assert_eq!(sections[0].package.version, Version::new(0, 1, 0));
+        assert_eq!(sections[0].new_version, Version::new(0, 2, 0));
+        assert_eq!(sections[0].commits.len(), 1);
+        assert_eq!(sections[0].commits[0].sha1, human.to_string());
         cleanup(&repo);
     }
 

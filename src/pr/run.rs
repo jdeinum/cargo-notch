@@ -2,7 +2,7 @@ use crate::cmd::run_command;
 use crate::config;
 use crate::error::{Error, Result};
 use crate::package::Package;
-use crate::pr::assign::WorktreeCommitAssigner;
+use crate::pr::assign::{WorktreeCommitAssigner, prior_bump_sections};
 use crate::pr::git::{commit_changes, open_pr, push_current_branch};
 use crate::pr::packages::CargoPackager;
 use crate::pr::traits::{CommitInfo, PackageCommits, Packages};
@@ -28,6 +28,10 @@ pub fn run() -> Result<()> {
     let cargo_packages = CargoPackager::new(".".to_string());
     let packages = cargo_packages.get().context("get packages")?;
 
+    // keep a copy: rebuilding the PR body later needs to map crate names from prior bump
+    // trailers back to their packages
+    let all_packages = packages.clone();
+
     // get commits for each package
     let repo: Repository = Repository::init(".").context("open repo")?;
     let mut worktree_assigner = WorktreeCommitAssigner::new(repo);
@@ -47,6 +51,12 @@ pub fn run() -> Result<()> {
         return Ok(());
     };
 
+    // bumps that previous runs already committed on this branch, recovered from their trailers —
+    // the PR body must describe the whole branch, not just this run's delta. Computed before
+    // commit_changes so this run's own bump commit isn't in the walked range.
+    let prior_bumps = prior_bump_sections(&repo, &config.release, &all_packages)
+        .context("collect prior bump sections")?;
+
     // actually update the package
     for updated_package in &res {
         update_package(updated_package, &changelog_range).context("update the package")?;
@@ -61,13 +71,18 @@ pub fn run() -> Result<()> {
     // push to the remote
     push_current_branch(&repo, &config.release).context("push current branch")?;
 
+    // the PR describes every bump on the branch: prior runs' sections (oldest first), then this
+    // run's
+    let mut all_updated = prior_bumps;
+    all_updated.extend(res);
+
     // open the PR
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .context("spawn runtime")?;
 
-    rt.block_on(open_pr(&repo, &config, token.expose_secret(), &res))
+    rt.block_on(open_pr(&repo, &config, token.expose_secret(), &all_updated))
         .context("open PR on runtime")?;
 
     Ok(())

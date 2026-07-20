@@ -2,8 +2,10 @@ use crate::config::{self, Config, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::pr::run::UpdatedCrate;
 use anyhow::Context;
+use cargo_metadata::semver::Version;
 use git2::{Commit, Cred, IndexAddOption, PushOptions, RemoteCallbacks, Repository, Signature};
 use octocrab::Octocrab;
+use octocrab::params::State;
 use tracing::debug;
 
 // Notch identity
@@ -30,15 +32,54 @@ pub fn ssh_credentials() -> RemoteCallbacks<'static> {
     callbacks
 }
 
-// `crate@version` pairs for every crate this run bumped, recorded as a trailer so a later run can
+// `crate@old->new` pairs for every crate this run bumped, recorded as a trailer so a later run can
 // recover exactly what a prior bump commit did without needing a second source of truth.
 pub fn build_bump_trailer(updated: &[UpdatedCrate]) -> String {
     let pairs = updated
         .iter()
-        .map(|c| format!("{}@{}", c.package.name, c.new_version))
+        .map(|c| {
+            format!(
+                "{}@{}->{}",
+                c.package.name, c.package.version, c.new_version
+            )
+        })
         .collect::<Vec<_>>()
         .join(",");
     format!("{NOTCH_TRAILER_KEY}: {pairs}")
+}
+
+pub struct BumpRecord {
+    pub name: String,
+    pub old: Version,
+    pub new: Version,
+}
+
+// Inverse of `build_bump_trailer`. Entries that don't parse are skipped rather than erroring —
+// notably trailers written by older notch versions that only recorded `crate@new` — so a rerun
+// degrades to not describing that bump instead of failing.
+pub fn parse_bump_trailer(commit: &Commit) -> Vec<BumpRecord> {
+    let Ok(message) = commit.message() else {
+        return Vec::new();
+    };
+    let Some(pairs) = message
+        .lines()
+        .find_map(|l| l.strip_prefix(&format!("{NOTCH_TRAILER_KEY}:")))
+    else {
+        return Vec::new();
+    };
+
+    pairs
+        .split(',')
+        .filter_map(|pair| {
+            let (name, versions) = pair.trim().split_once('@')?;
+            let (old, new) = versions.split_once("->")?;
+            Some(BumpRecord {
+                name: name.to_string(),
+                old: Version::parse(old).ok()?,
+                new: Version::parse(new).ok()?,
+            })
+        })
+        .collect()
 }
 
 // A commit is notch's own release commit only if both the committer identity and the trailer match
@@ -144,15 +185,41 @@ pub async fn open_pr(
     let (title, body) =
         get_pr_title_and_description(updated_crates).context("get title pr and description")?;
 
-    let pr = octocrab
-        .pulls(owner, repo_name)
-        .create(title, name, &config.release.default_branch)
-        .body(body)
+    let head_filter = format!("{owner}:{name}");
+    let pulls = octocrab.pulls(owner, repo_name);
+
+    // a rerun on a branch that already has an open release PR must refresh that PR's title/body
+    // instead of trying to create a second one (GitHub rejects the duplicate with a 422)
+    let existing = pulls
+        .list()
+        .state(State::Open)
+        .head(head_filter)
+        .per_page(1)
         .send()
         .await
-        .context("create PR")?;
+        .context("list open PRs for branch")?
+        .items
+        .into_iter()
+        .next();
 
-    println!("Opened PR #{}: {}", pr.number, pr.html_url.unwrap());
+    if let Some(pr) = existing {
+        let pr = pulls
+            .update(pr.number)
+            .title(title)
+            .body(body)
+            .send()
+            .await
+            .context("update existing PR")?;
+        println!("Updated PR #{}: {}", pr.number, pr.html_url.unwrap());
+    } else {
+        let pr = pulls
+            .create(title, name, &config.release.default_branch)
+            .body(body)
+            .send()
+            .await
+            .context("create PR")?;
+        println!("Opened PR #{}: {}", pr.number, pr.html_url.unwrap());
+    }
     Ok(())
 }
 
@@ -175,6 +242,18 @@ fn get_pr_title_and_description(updated_crates: &[UpdatedCrate]) -> Result<(Stri
     let title = match updated_crates {
         [] => return Err(Error::msg("No updated crates, shouldn't be creating a PR!")),
         [c] => bump_line(c),
+        // several sections for the same crate means one crate bumped across several runs —
+        // title it with the full journey rather than the generic multi-crate line
+        [first, .., last]
+            if updated_crates
+                .iter()
+                .all(|c| c.package.name == first.package.name) =>
+        {
+            format!(
+                "chore: bumping {} from {} to {}",
+                first.package.name, first.package.version, last.new_version
+            )
+        }
         _ => "chore: bumping package versions".to_string(),
     };
 
@@ -243,8 +322,58 @@ mod tests {
 
         assert_eq!(
             build_bump_trailer(&updated),
-            "Notch-Bump: foo@1.1.0,bar@0.5.0"
+            "Notch-Bump: foo@1.0.0->1.1.0,bar@0.4.0->0.5.0"
         );
+    }
+
+    #[test]
+    fn parse_bump_trailer_roundtrips_build() {
+        let updated = vec![
+            updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0)),
+            updated_crate("bar", (0, 4, 0), Version::new(0, 5, 0)),
+        ];
+        let message = format!("{NOTCH_COMMIT_MESSAGE}\n\n{}", build_bump_trailer(&updated));
+
+        let (repo, oid) =
+            repo_with_commit("parse-roundtrip", &message, &notch_signature().unwrap());
+        let records = parse_bump_trailer(&repo.find_commit(oid).unwrap());
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].name, "foo");
+        assert_eq!(records[0].old, Version::new(1, 0, 0));
+        assert_eq!(records[0].new, Version::new(1, 1, 0));
+        assert_eq!(records[1].name, "bar");
+        assert_eq!(records[1].old, Version::new(0, 4, 0));
+        assert_eq!(records[1].new, Version::new(0, 5, 0));
+
+        let _ = fs::remove_dir_all(repo.workdir().unwrap());
+    }
+
+    // Trailers written before the old version was recorded (`crate@new`) can't be recovered —
+    // they must be skipped without dropping the entries that do parse.
+    #[test]
+    fn parse_bump_trailer_skips_legacy_entries() {
+        let message = format!("{NOTCH_COMMIT_MESSAGE}\n\nNotch-Bump: foo@1.1.0,bar@0.4.0->0.5.0");
+
+        let (repo, oid) = repo_with_commit("parse-legacy", &message, &notch_signature().unwrap());
+        let records = parse_bump_trailer(&repo.find_commit(oid).unwrap());
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "bar");
+
+        let _ = fs::remove_dir_all(repo.workdir().unwrap());
+    }
+
+    #[test]
+    fn parse_bump_trailer_returns_nothing_without_a_trailer() {
+        let (repo, oid) = repo_with_commit(
+            "parse-none",
+            "chore(notch): unrelated",
+            &notch_signature().unwrap(),
+        );
+        assert!(parse_bump_trailer(&repo.find_commit(oid).unwrap()).is_empty());
+
+        let _ = fs::remove_dir_all(repo.workdir().unwrap());
     }
 
     #[test]
@@ -375,6 +504,17 @@ mod tests {
 
         assert_eq!(title, "chore: bumping foo from 1.0.0 to 1.1.0");
         assert!(body.contains("chore: bumping foo from 1.0.0 to 1.1.0"));
+    }
+
+    #[test]
+    fn repeated_bumps_of_one_crate_get_a_cumulative_title() {
+        let updated = vec![
+            updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0)),
+            updated_crate("foo", (1, 1, 0), Version::new(1, 2, 0)),
+        ];
+        let (title, _body) = get_pr_title_and_description(&updated).unwrap();
+
+        assert_eq!(title, "chore: bumping foo from 1.0.0 to 1.2.0");
     }
 
     #[test]
