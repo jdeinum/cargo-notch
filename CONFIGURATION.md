@@ -10,10 +10,15 @@ is optional — add one only to override what you need.
   the owner parsed from the `origin` remote's URL.
 - `name` (optional) — GitHub repository name the PR is opened against.
   Defaults to the repo name parsed from the `origin` remote's URL.
+- `token` (required for `cargo notch pr`) — GitHub token used to open the
+  release PR. There's no CLI flag for this and it shouldn't go in `notch.toml`
+  either, since that file is normally committed — set it via the
+  `NOTCH__REPO__TOKEN` environment variable instead (see below).
 
-Only set these when `origin` doesn't point at the GitHub repo you actually
-want (e.g. a fork or a mirror). Both SSH (`git@github.com:owner/repo.git`) and
-HTTPS (`https://github.com/owner/repo`) remote URLs are understood.
+Only set `owner`/`name` when `origin` doesn't point at the GitHub repo you
+actually want (e.g. a fork or a mirror). Both SSH
+(`git@github.com:owner/repo.git`) and HTTPS (`https://github.com/owner/repo`)
+remote URLs are understood.
 
 ## `[release]`
 
@@ -29,12 +34,20 @@ HTTPS (`https://github.com/owner/repo`) remote URLs are understood.
   Docker build workflow triggering on a `*_service-v*` glob) needs the real
   package name to line up.
 
+## Environment variable overrides
+
+Every field can also be set (or overridden) with a `NOTCH__`-prefixed
+environment variable, using `__` to separate the section from the key, e.g.
+`NOTCH__RELEASE__DEFAULT_BRANCH=main` overrides `[release] default_branch`.
+This is the only way to set `repo.token`.
+
 ## Example
 
 ```toml
 [repo]
 # owner = "my-org"
 # name = "my-repo"
+# token is a secret — set it via NOTCH__REPO__TOKEN instead of here
 
 [release]
 default_branch = "master"

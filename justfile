@@ -1,3 +1,3 @@
 
-deploy: 
-    cargo run notch pr --token "$(doppler run -p github_token -c prod -- printenv GITHUB_TOKEN)"
+deploy:
+    NOTCH__REPO__TOKEN="$(doppler run -p github_token -c prod -- printenv GITHUB_TOKEN)" cargo run notch pr

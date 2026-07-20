@@ -31,8 +31,12 @@ pub fn run(old_commit: &str, new_commit: &str) -> Result<()> {
     let repo = Repository::open(".").context("open repo")?;
     let members_source = WorktreeMembers::new(repo);
 
-    let old_members = members_source.get(old_commit).context("get crate members")?;
-    let new_members = members_source.get(new_commit).context("get crate members")?;
+    let old_members = members_source
+        .get(old_commit)
+        .context("get crate members")?;
+    let new_members = members_source
+        .get(new_commit)
+        .context("get crate members")?;
 
     for tag_name in compute_tags(&old_members, &new_members, &config.release)? {
         println!("{tag_name}");

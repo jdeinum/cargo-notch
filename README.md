@@ -67,7 +67,8 @@ git checkout -b feature/add_two
 git commit -m "feat: added the add_two function"
 
 # bump versions, update changelogs, and open a release PR for changed crates
-cargo notch pr --token <github-token>
+# (the token is read from config/env, not passed on the command line — see CONFIGURATION.md)
+NOTCH__REPO__TOKEN=<github-token> cargo notch pr
 
 # merge PR on github or from cli (not required if auto-merge is used)
 gh pr merge <pr_number>
