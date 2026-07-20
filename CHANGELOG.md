@@ -1,3 +1,25 @@
+## [0.1.21] - 2026-07-20
+
+### 🚀 Features
+
+- Hiding git details behind interface
+- Trait for consistency
+
+### 🐛 Bug Fixes
+
+- Trust manifest root
+- Calling multiple times updates the pr
+
+### 🚜 Refactor
+
+- Put ssh auth in its own function
+- Move package into shared type
+
+### 📚 Documentation
+
+- Update readme / config / justfile for proper token usage
+- Rename to cargo-notch
+- Readme
 ## [0.1.20] - 2026-07-19
 
 ### 🐛 Bug Fixes
