@@ -19,6 +19,17 @@ pub fn notch_signature<'a>() -> Result<Signature<'a>> {
     Signature::now(NOTCH_COMMITTER_NAME, NOTCH_COMMITTER_EMAIL).context("build notch signature")
 }
 
+// Shared by every remote operation (fetch, push) that needs to authenticate — relies on the
+// caller already having an SSH agent with the right key loaded, since notch has no other way
+// to get credentials.
+pub fn ssh_credentials() -> RemoteCallbacks<'static> {
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(|_url, username, _allowed| {
+        Cred::ssh_key_from_agent(username.unwrap_or("git"))
+    });
+    callbacks
+}
+
 // `crate@version` pairs for every crate this run bumped, recorded as a trailer so a later run can
 // recover exactly what a prior bump commit did without needing a second source of truth.
 pub fn build_bump_trailer(updated: &[UpdatedCrate]) -> String {
@@ -86,13 +97,8 @@ pub fn push_current_branch(repo: &Repository, release: &ReleaseConfig) -> Result
 
     debug!("Found remote {}", release.remote);
 
-    let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(|_url, username, _allowed| {
-        Cred::ssh_key_from_agent(username.unwrap_or("git"))
-    });
-
     let mut opts = PushOptions::new();
-    opts.remote_callbacks(callbacks);
+    opts.remote_callbacks(ssh_credentials());
 
     // refspec: local:remote
     let refspec = format!("{branch}:{branch}");

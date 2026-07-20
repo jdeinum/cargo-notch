@@ -10,11 +10,6 @@ pub struct Crate {
     pub path: String,
     /// The package's actual `[package] name` from its `Cargo.toml`.
     pub name: String,
-    pub version: MyVersion,
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct MyVersion {
     pub version: Version,
 }
 
@@ -57,9 +52,7 @@ pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Crate>> {
             Crate {
                 path,
                 name: package.name.to_string(),
-                version: MyVersion {
-                    version: package.version.clone(),
-                },
+                version: package.version.clone(),
             }
         })
         .collect();

@@ -124,21 +124,11 @@ fn compute_tags(
     // Cargo package name is only needed for the emitted tag)
     let old_packages: HashMap<&str, (&str, Version)> = old_members
         .iter()
-        .map(|x| {
-            (
-                x.path.as_str(),
-                (x.name.as_str(), x.version.version.clone()),
-            )
-        })
+        .map(|x| (x.path.as_str(), (x.name.as_str(), x.version.clone())))
         .collect();
     let new_packages: HashMap<&str, (&str, Version)> = new_members
         .iter()
-        .map(|x| {
-            (
-                x.path.as_str(),
-                (x.name.as_str(), x.version.version.clone()),
-            )
-        })
+        .map(|x| (x.path.as_str(), (x.name.as_str(), x.version.clone())))
         .collect();
 
     let paths: HashSet<&str> = old_packages
@@ -172,16 +162,13 @@ fn compute_tags(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::MyVersion;
     use std::assert_matches;
 
     fn member(path: &str, name: &str, version: &str) -> Crate {
         Crate {
             path: path.to_string(),
             name: name.to_string(),
-            version: MyVersion {
-                version: Version::parse(version).unwrap(),
-            },
+            version: Version::parse(version).unwrap(),
         }
     }
 

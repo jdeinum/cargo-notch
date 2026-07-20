@@ -446,7 +446,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('3')));
         let updated = app.into_updated_crates();
         assert_eq!(updated.len(), 1);
-        // `bump_major` only increments `major` (see `MyVersion::bump_major`);
+        // `bump_major` only increments `major` (see `Package::bump_major`);
         // it does not reset `minor`/`patch`.
         assert_eq!(updated[0].new_version, Version::parse("1.1.0").unwrap());
     }

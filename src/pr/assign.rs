@@ -1,9 +1,9 @@
 use crate::config::ReleaseConfig;
 use crate::error::{Error, Result};
-use crate::pr::git::{changelog_range, is_notch_commit};
+use crate::pr::git::{changelog_range, is_notch_commit, ssh_credentials};
 use crate::pr::traits::{CommitInfo, Package, PackageCommits};
 use anyhow::Context;
-use git2::{Commit, Cred, DiffOptions, FetchOptions, Oid, RemoteCallbacks, Repository, Sort};
+use git2::{Commit, DiffOptions, FetchOptions, Oid, Repository, Sort};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::debug;
@@ -74,13 +74,8 @@ fn fetch_remote(repo: &Repository, release: &ReleaseConfig) -> Result<()> {
         .find_remote(&release.remote)
         .context("get remote to fetch")?;
 
-    let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(|_url, username, _allowed| {
-        Cred::ssh_key_from_agent(username.unwrap_or("git"))
-    });
-
     let mut opts = FetchOptions::new();
-    opts.remote_callbacks(callbacks);
+    opts.remote_callbacks(ssh_credentials());
 
     remote
         .fetch(&[&release.default_branch], Some(&mut opts), None)
