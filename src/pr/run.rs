@@ -11,7 +11,7 @@ use anyhow::Context;
 use cargo_metadata::semver::Version;
 use git2::Repository;
 use secrecy::ExposeSecret;
-use tracing::info;
+use tracing::{debug, info};
 
 pub fn run() -> Result<()> {
     // load the config
