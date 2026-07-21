@@ -1,3 +1,8 @@
+## [0.1.23] - 2026-07-21
+
+### 🚀 Features
+
+- Checking crates
 ## [0.1.22] - 2026-07-20
 
 ### 📚 Documentation
