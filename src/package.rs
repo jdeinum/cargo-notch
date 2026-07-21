@@ -4,6 +4,8 @@ use cargo_metadata::{MetadataCommand, semver::Version};
 use std::path::Path;
 use tracing::debug;
 
+// some docs
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Package {
     /// Workspace-relative directory containing the package's `Cargo.toml`.
