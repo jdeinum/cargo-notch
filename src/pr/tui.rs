@@ -33,17 +33,43 @@ pub struct PackageItem {
 }
 
 impl PackageItem {
-    pub fn new(package: Package, commits: Vec<CommitInfo>) -> Self {
-        let patch = package.bump_patch();
-        let minor = package.bump_minor();
-        let major = package.bump_major();
+    /// `baseline` is the version before this branch's first still-unmerged bump (or the
+    /// package's own current version, if it has none) — the patch/minor/major options are
+    /// computed from there, not from `package`'s current version, so a package that already has
+    /// a staged bump can show its current version as a still-selectable option (e.g. `patch`
+    /// landing back on the version it's already at) rather than always offering one past it. See
+    /// `Bump::apply_to`.
+    ///
+    /// Each option is clamped to at least `package`'s current version: if a bigger bump is
+    /// already staged (e.g. a minor bump already landed the package on 1.3.0 from a 1.2.5
+    /// baseline), a lower-tier option like `patch` (which would otherwise compute 1.2.6) must not
+    /// offer what would be a downgrade — it should show the same already-covering 1.3.0 instead.
+    ///
+    /// Whenever something is already staged (`current > baseline`), `patch` is preselected — not
+    /// because the staged bump was necessarily patch-level, but because `patch` always clamps to
+    /// exactly `current` in that state (see the proof below), so preselecting it *is* preselecting
+    /// "stay at the current version". The realistic choice is then "stay put" vs. "escalate to a
+    /// higher tier", not picking from scratch. A package with no prior bump (`current == baseline`)
+    /// has nothing to stay at, so it's left unselected as before.
+    ///
+    /// Why `patch` always clamps to `current` there: `Bump::Patch.apply_to(baseline)` only differs
+    /// from `baseline` in the patch field, so it's less than `current` in every field that already
+    /// differs from `baseline` (major, minor, or a patch increase of more than one — the last
+    /// covers a package whose current version reflects several stacked bumps from before this
+    /// baseline/poaching scheme existed), and `max(_, current)` picks `current` in all of them.
+    pub fn new(package: Package, commits: Vec<CommitInfo>, baseline: &Version) -> Self {
+        let current = package.version.clone();
+        let patch = Bump::Patch.apply_to(baseline).max(current.clone());
+        let minor = Bump::Minor.apply_to(baseline).max(current.clone());
+        let major = Bump::Major.apply_to(baseline).max(current.clone());
+        let selected = (current > *baseline).then_some(Bump::Patch);
         Self {
             package,
             commits,
             patch,
             minor,
             major,
-            selected: None,
+            selected,
         }
     }
 
@@ -287,13 +313,15 @@ impl App {
     }
 }
 
-/// Runs the interactive bump-selection TUI over `changed`. Returns `None`
-/// if the user cancelled (nothing should be written to disk), or the
-/// confirmed selections otherwise.
-pub fn run(changed: HashMap<Package, Vec<CommitInfo>>) -> Result<Option<Vec<UpdatedCrate>>> {
+/// Runs the interactive bump-selection TUI over `changed`, which pairs each package with its
+/// baseline (see `PackageItem::new`) alongside its commits. Returns `None` if the user cancelled
+/// (nothing should be written to disk), or the confirmed selections otherwise.
+pub fn run(
+    changed: HashMap<Package, (Version, Vec<CommitInfo>)>,
+) -> Result<Option<Vec<UpdatedCrate>>> {
     let mut packages: Vec<PackageItem> = changed
         .into_iter()
-        .map(|(package, commits)| PackageItem::new(package, commits))
+        .map(|(package, (baseline, commits))| PackageItem::new(package, commits, &baseline))
         .collect();
     packages.sort_by(|a, b| a.package().name.cmp(&b.package().name));
 
@@ -315,13 +343,15 @@ mod tests {
     use super::*;
 
     fn package(name: &str, version: &str) -> PackageItem {
+        let version = Version::parse(version).unwrap();
         PackageItem::new(
             Package {
                 path: name.to_string(),
                 name: name.to_string(),
-                version: Version::parse(version).unwrap(),
+                version: version.clone(),
             },
             Vec::new(),
+            &version,
         )
     }
 
@@ -430,5 +460,96 @@ mod tests {
         let updated = app.into_updated_crates();
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].new_version, Version::parse("1.0.0").unwrap());
+    }
+
+    #[test]
+    fn bump_options_are_computed_from_the_baseline_not_the_current_version() {
+        // package currently sits at 1.3.0 (already staged by a prior, still-unmerged bump), but
+        // its baseline — before that bump — was 1.2.5. The patch option should land back on 1.3.0
+        // (the already-staged minor bump), letting the user "change their mind" and pick the
+        // version that's already current, rather than always offering one past it.
+        let current = Version::parse("1.3.0").unwrap();
+        let baseline = Version::parse("1.2.5").unwrap();
+        let item = PackageItem::new(
+            Package {
+                path: "a".to_string(),
+                name: "a".to_string(),
+                version: current.clone(),
+            },
+            Vec::new(),
+            &baseline,
+        );
+
+        assert_eq!(*item.version_for(Bump::Patch), current);
+        assert_eq!(*item.version_for(Bump::Minor), current);
+        assert_eq!(
+            *item.version_for(Bump::Major),
+            Version::parse("2.0.0").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_package_with_something_already_staged_defaults_to_staying_at_the_current_version() {
+        // baseline 1.2.5 -> current 1.3.0 (a minor bump already landed). `patch` comes
+        // preselected — not because the staged bump was patch-level, but because it clamps to
+        // exactly 1.3.0 here, so preselecting it means "stay at the current version". The
+        // realistic choice is then "stay put" vs. "escalate", not picking from scratch.
+        let item = PackageItem::new(
+            Package {
+                path: "a".to_string(),
+                name: "a".to_string(),
+                version: Version::parse("1.3.0").unwrap(),
+            },
+            Vec::new(),
+            &Version::parse("1.2.5").unwrap(),
+        );
+        assert_eq!(item.selected, Some(Bump::Patch));
+        assert_eq!(
+            *item.version_for(Bump::Patch),
+            Version::parse("1.3.0").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_package_with_several_stacked_legacy_bumps_still_defaults_to_the_current_version() {
+        // baseline 1.2.5 -> current 1.2.7: two patch-level bumps stacked on top of each other from
+        // before this baseline/poaching scheme existed, rather than one clean bump. `patch` must
+        // still clamp to (and preselect) the real current version, 1.2.7, not the raw 1.2.6 a
+        // single patch off the baseline would give.
+        let item = PackageItem::new(
+            Package {
+                path: "a".to_string(),
+                name: "a".to_string(),
+                version: Version::parse("1.2.7").unwrap(),
+            },
+            Vec::new(),
+            &Version::parse("1.2.5").unwrap(),
+        );
+        assert_eq!(item.selected, Some(Bump::Patch));
+        assert_eq!(
+            *item.version_for(Bump::Patch),
+            Version::parse("1.2.7").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_package_with_no_prior_bump_starts_unselected() {
+        // baseline == current: no tier is a no-op, so nothing already staged to preselect.
+        let item = package("a", "0.1.0");
+        assert_eq!(item.selected, None);
+    }
+
+    #[test]
+    fn preselection_lets_confirm_succeed_without_touching_an_unescalated_package() {
+        let mut app = App::new(vec![PackageItem::new(
+            Package {
+                path: "a".to_string(),
+                name: "a".to_string(),
+                version: Version::parse("1.3.0").unwrap(),
+            },
+            Vec::new(),
+            &Version::parse("1.2.5").unwrap(),
+        )]);
+        assert_eq!(app.handle_key(key(KeyCode::Char('c'))), Signal::Confirm);
     }
 }

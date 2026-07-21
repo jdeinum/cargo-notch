@@ -4,7 +4,7 @@ use crate::package::Package;
 use git2::Repository;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CommitInfo {
     pub summary: String,
     pub sha1: String,

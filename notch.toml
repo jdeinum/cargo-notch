@@ -1,30 +1,13 @@
-# See CONFIGURATION.md for the full field reference.
-# Every field below is the default cargo-notch already uses; this file exists
-# to document the config, not to override anything.
-
 [repo]
-# owner = "my-org"
-# name = "my-repo"
 
 [release]
 default_branch = "master"
 remote = "origin"
-tag_format = "v{version}"
+tag_format = "{name}-v{version}"
 
 [bumps]
-# How `cargo notch pr --auto` versions crates still below 1.0.0:
-#   "cargo"  - cargo's interpretation of 0.x versions: a breaking change bumps
-#              minor, everything else bumps patch
-#   "semver" - apply the mapped bump as-is, like any post-1.0 crate
 v0 = "cargo"
-# Conventional commit patterns mapped to each bump level. A pattern is either
-# a bare type ("chore", any scope) or a scoped one ("chore(release)", that
-# scope only); the scoped form wins when both match. A breaking change (`!`
-# header marker or `BREAKING CHANGE:` footer) always means a major bump, and
-# commits matching nothing (or that aren't conventional at all) fall back to
-# patch. Commits matching `skip` contribute no bump; a crate whose every
-# commit is skipped is left out of the release.
 major = []
 minor = ["feat"]
-patch = ["fix", "refactor", "chore"]
-skip = ["chore(release)"]
+patch = ["fix", "chore", "refactor", "docs"]
+skip = []

@@ -1,64 +1,35 @@
 # Installation
 
-Install `cargo-notch` directly from git:
+## Step 1: Install Binary
+
+### Install from Release
+
+Run
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jdeinum/cargo-notch/releases/download/latest/cargo-notch-installer.sh | sh
+```
+
+### Install from Source (requires cargo)
 
 ```bash
 cargo install --git https://github.com/jdeinum/cargo-notch cargo-notch
 ```
 
-This installs the `cargo notch` subcommand, which you can then run from within
-any repository. The GitHub token isn't a CLI flag (that would leak into shell
-history/process listings) — set it via the `NOTCH__REPO__TOKEN` environment
-variable, per [CONFIGURATION.md](./CONFIGURATION.md):
+## Step 2: Initialize Notch
 
 ```bash
-NOTCH__REPO__TOKEN=<github-token> cargo notch pr
+cargo notch init
 ```
 
-## CI: creating tags
+## Step 3: Create the required PAT
 
-`cargo notch pr` only bumps versions, updates changelogs, and opens a release
-PR — it doesn't create tags. That part runs in CI, after the release PR
-merges, via a reusable workflow hosted in this repo
-(`.github/workflows/tag.yaml`). Call it from your own repo instead of copying
-the file:
+1. Go to repository
+2. -> Settings
+3. -> Secrets and Variables
+4. -> Actions
+5. Create RELEASE_PAT secret, setting it to a valid github token
 
-```yaml
-# .github/workflows/tag.yaml
-name: Tag crate versions
+## Step 4: Use!
 
-on:
-  push:
-    branches: [master]
-
-permissions:
-  contents: write
-
-jobs:
-  tag:
-    uses: jdeinum/cargo-notch/.github/workflows/tag.yaml@master
-    with:
-      version: v0.1.25
-    permissions:
-      contents: write
-    secrets:
-      release_pat: ${{ secrets.RELEASE_PAT }}
-```
-
-Notes:
-
-- `@master` floats on notch's `master` branch. Once notch has tagged releases
-  you trust, pin to one instead (e.g. `@cargo-notch-v0.1.12`) so a notch
-  change can't silently alter your CI.
-- `version` selects the `cargo-notch` release installed inside the workflow
-  (via the release's shell installer, not `cargo install`). Defaults to
-  `latest`, which floats on whatever GitHub currently marks as the latest
-  release — pin it (e.g. `v0.1.25`) for the same reason you'd pin `@master`
-  above.
-- `release_pat` must be a PAT (not the default `GITHUB_TOKEN`) with
-  `contents: write` on your repo, added as a secret named `RELEASE_PAT`.
-  This is required, not optional, if you have anything downstream that
-  triggers on tag pushes (e.g. a build workflow on `push: tags:`) — GitHub
-  does not let pushes authenticated with the default `GITHUB_TOKEN` trigger
-  other workflow runs, so without a real PAT here the tags will be created
-  but your tag-triggered workflow will never fire.
+That's it, see the example in the [README](/README.md) on usage.

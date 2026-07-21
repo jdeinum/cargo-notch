@@ -9,7 +9,7 @@ use cargo_metadata::semver::Version;
 use git2::{Commit, DiffOptions, FetchOptions, Oid, Repository, Sort};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, instrument};
 
 /// Assigns commits to packages by walking the local worktree's git history,
 /// rather than e.g. asking a forge API for it.
@@ -24,6 +24,7 @@ impl WorktreeCommitAssigner {
 }
 
 impl PackageCommits for WorktreeCommitAssigner {
+    #[instrument(skip_all)]
     fn get(
         &mut self,
         config: &ReleaseConfig,
@@ -65,6 +66,8 @@ impl PackageCommits for WorktreeCommitAssigner {
             (attributed, changelog_range)
         };
 
+        debug!("Attributed: {attributed:?}");
+        debug!("Changelog range: {changelog_range:?}");
         Ok((attributed, repo, changelog_range))
     }
 }

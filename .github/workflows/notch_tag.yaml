@@ -20,8 +20,7 @@ on:
           PAT with contents:write on the calling repo. Pushes made with the
           default GITHUB_TOKEN don't trigger other workflow runs, so callers
           that want the pushed tag to fire their own tag-triggered workflows
-          need to pass a PAT here. Falls back to GITHUB_TOKEN when omitted
-          (fine for notch's own self-tagging run).
+          need to pass a PAT here. Falls back to GITHUB_TOKEN when omitted.
 
 permissions:
   contents: write

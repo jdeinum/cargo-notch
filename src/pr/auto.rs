@@ -3,6 +3,7 @@ use crate::package::Package;
 use crate::pr::bump::Bump;
 use crate::pr::run::UpdatedCrate;
 use crate::pr::traits::CommitInfo;
+use cargo_metadata::semver::Version;
 use std::collections::HashMap;
 use tracing::info;
 
@@ -97,36 +98,50 @@ const fn adjust_for_v0(bump: Bump, version_major: u64, style: V0Style) -> Bump {
     }
 }
 
+/// The bump a package's commits require, before any v0 adjustment: `None` if every commit matched
+/// the `skip` list (and there were commits to check), `Some(Patch)` if there were no attributed
+/// commits at all, since the changed-package detection (not attribution) is what's authoritative
+/// about a package having changed.
+fn required_bump(commits: &[CommitInfo], config: &BumpsConfig) -> Option<Bump> {
+    if commits.is_empty() {
+        Some(Bump::Patch)
+    } else {
+        commits
+            .iter()
+            .filter_map(|c| bump_for_commit(c, config))
+            .max()
+    }
+}
+
 /// Picks each changed package's version bump from its commits without user
 /// interaction: the biggest bump any attributed commit maps to wins. A
 /// package whose every commit matched the `skip` list is dropped from the
 /// release entirely; a package with no attributed commits at all still gets
 /// a patch bump, since the changed-package detection (not attribution) is
 /// what's authoritative about it having changed.
+///
+/// `changed` pairs each package with its baseline — the version before this branch's first
+/// still-unmerged bump, or its own current version if it has none — alongside its commits (which,
+/// for a package with prior sections, are poached: the whole not-yet-released history, not just
+/// this run's delta). The bump is applied to that baseline rather than the package's current
+/// version, so a fresh commit no more severe than what's already staged doesn't double-bump it —
+/// see `Bump::apply_to`.
 pub fn select(
-    changed: HashMap<Package, Vec<CommitInfo>>,
+    changed: HashMap<Package, (Version, Vec<CommitInfo>)>,
     config: &BumpsConfig,
 ) -> Vec<UpdatedCrate> {
     let mut updated: Vec<UpdatedCrate> = changed
         .into_iter()
-        .filter_map(|(package, commits)| {
-            let raw = if commits.is_empty() {
-                Some(Bump::Patch)
-            } else {
-                commits
-                    .iter()
-                    .filter_map(|c| bump_for_commit(c, config))
-                    .max()
-            };
-            let Some(raw) = raw else {
+        .filter_map(|(package, (baseline, commits))| {
+            let Some(raw) = required_bump(&commits, config) else {
                 info!(
                     "{}: all commits matched the skip list, not bumping",
                     package.name
                 );
                 return None;
             };
-            let bump = adjust_for_v0(raw, package.version.major, config.v0);
-            let new_version = bump.apply(&package);
+            let bump = adjust_for_v0(raw, baseline.major, config.v0);
+            let new_version = bump.apply_to(&baseline);
             info!(
                 "{}: {} -> {} ({} bump)",
                 package.name,
@@ -164,6 +179,12 @@ mod tests {
             name: "a".to_string(),
             version: Version::parse(version).unwrap(),
         }
+    }
+
+    // baseline == the package's own current version, i.e. no prior sections poached in — what
+    // every test below wants except the ones specifically about poaching.
+    fn no_poaching(package: &Package, commits: Vec<CommitInfo>) -> (Version, Vec<CommitInfo>) {
+        (package.version.clone(), commits)
     }
 
     #[test]
@@ -310,10 +331,9 @@ mod tests {
 
     #[test]
     fn select_takes_the_max_bump_across_commits() {
-        let changed = HashMap::from([(
-            package("1.2.3"),
-            vec![commit("fix: a"), commit("feat: b"), commit("chore: c")],
-        )]);
+        let pkg = package("1.2.3");
+        let commits = vec![commit("fix: a"), commit("feat: b"), commit("chore: c")];
+        let changed = HashMap::from([(pkg.clone(), no_poaching(&pkg, commits))]);
         let updated = select(changed, &BumpsConfig::default());
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].new_version, Version::parse("1.3.0").unwrap());
@@ -321,11 +341,16 @@ mod tests {
 
     #[test]
     fn select_applies_the_v0_policy() {
-        let changed = HashMap::from([(package("0.1.0"), vec![commit("feat!: breaking")])]);
+        let pkg = package("0.1.0");
+        let changed = HashMap::from([(
+            pkg.clone(),
+            no_poaching(&pkg, vec![commit("feat!: breaking")]),
+        )]);
         let updated = select(changed, &BumpsConfig::default());
         assert_eq!(updated[0].new_version, Version::parse("0.2.0").unwrap());
 
-        let changed = HashMap::from([(package("0.1.0"), vec![commit("feat: minor")])]);
+        let changed =
+            HashMap::from([(pkg.clone(), no_poaching(&pkg, vec![commit("feat: minor")]))]);
         let updated = select(changed, &BumpsConfig::default());
         assert_eq!(updated[0].new_version, Version::parse("0.1.1").unwrap());
     }
@@ -336,13 +361,20 @@ mod tests {
             skip: vec!["chore(release)".to_string()],
             ..BumpsConfig::default()
         };
-        let changed = HashMap::from([(package("0.1.0"), vec![commit("chore(release): 0.1.0")])]);
+        let pkg = package("0.1.0");
+        let changed = HashMap::from([(
+            pkg.clone(),
+            no_poaching(&pkg, vec![commit("chore(release): 0.1.0")]),
+        )]);
         assert!(select(changed, &config).is_empty());
 
         // a non-skipped commit alongside the skipped one keeps the package in
         let changed = HashMap::from([(
-            package("0.1.0"),
-            vec![commit("chore(release): 0.1.0"), commit("fix: a")],
+            pkg.clone(),
+            no_poaching(
+                &pkg,
+                vec![commit("chore(release): 0.1.0"), commit("fix: a")],
+            ),
         )]);
         let updated = select(changed, &config);
         assert_eq!(updated.len(), 1);
@@ -351,8 +383,39 @@ mod tests {
 
     #[test]
     fn packages_without_commits_get_a_patch_bump() {
-        let changed = HashMap::from([(package("0.1.0"), Vec::new())]);
+        let pkg = package("0.1.0");
+        let changed = HashMap::from([(pkg.clone(), no_poaching(&pkg, Vec::new()))]);
         let updated = select(changed, &BumpsConfig::default());
         assert_eq!(updated[0].new_version, Version::parse("0.1.1").unwrap());
+    }
+
+    #[test]
+    fn select_applies_the_bump_to_the_baseline_not_the_current_version() {
+        // package currently sits at 1.3.0 on disk (already staged by a prior, still-unmerged
+        // bump), but its true baseline — before that bump — was 1.2.5. A fresh patch-level commit
+        // that doesn't exceed the already-staged minor bump must not stack another bump on top of
+        // the current 1.3.0.
+        let pkg = package("1.3.0");
+        let baseline = Version::parse("1.2.5").unwrap();
+        let poached_plus_fresh = vec![commit("feat: b"), commit("fix: a")];
+        let changed = HashMap::from([(pkg.clone(), (baseline, poached_plus_fresh))]);
+
+        let updated = select(changed, &BumpsConfig::default());
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].new_version, Version::parse("1.3.0").unwrap());
+        assert_eq!(updated[0].new_version, pkg.version, "should stay put");
+    }
+
+    #[test]
+    fn select_escalates_past_the_baseline_when_a_fresh_commit_is_more_severe() {
+        // same staged state as above, but this time the fresh commit is breaking — the max
+        // severity across the whole (poached) history now exceeds the already-staged minor bump.
+        let pkg = package("1.3.0");
+        let baseline = Version::parse("1.2.5").unwrap();
+        let poached_plus_fresh = vec![commit("feat: b"), commit("feat!: breaking")];
+        let changed = HashMap::from([(pkg, (baseline, poached_plus_fresh))]);
+
+        let updated = select(changed, &BumpsConfig::default());
+        assert_eq!(updated[0].new_version, Version::parse("2.0.0").unwrap());
     }
 }

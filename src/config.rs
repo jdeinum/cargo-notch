@@ -3,10 +3,11 @@ use anyhow::Context;
 use config::{Environment, File, FileFormat};
 use git2::Repository;
 use secrecy::SecretString;
-use serde::Deserialize;
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use std::{io::Write, path::Path};
+use tracing::warn;
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub repo: RepoConfig,
@@ -14,7 +15,26 @@ pub struct Config {
     pub bumps: BumpsConfig,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+impl Config {
+    pub(crate) fn write_to_default_file(&self) -> Result<()> {
+        // if the file already exists, warn and return
+        if std::path::Path::exists(Path::new("notch.toml")) {
+            warn!("notch.toml already exists, not writing default!");
+            return Ok(());
+        }
+
+        let mut f = std::fs::File::create(Path::new("notch.toml")).context("create notch.toml")?;
+
+        let s = toml::to_string(self).context("convert config to toml")?;
+
+        f.write_all(&s.into_bytes())
+            .context("write config to file")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct RepoConfig {
     /// Overrides the owner detected from the `origin` remote.
@@ -22,10 +42,14 @@ pub struct RepoConfig {
     /// Overrides the repo name detected from the `origin` remote.
     pub name: Option<String>,
     /// Github token
+    /// We opt to skip serializing this field, the only time we serialize the config is through
+    /// init, and we dont have a token anyways. Deserializing must still work, though — it's how
+    /// the `NOTCH__REPO__TOKEN` env var override reaches this field.
+    #[serde(skip_serializing)]
     pub token: Option<SecretString>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ReleaseConfig {
     pub default_branch: String,
@@ -59,7 +83,7 @@ impl ReleaseConfig {
 }
 
 /// How `--auto` versions crates still below 1.0.0.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum V0Style {
     /// Cargo's interpretation of 0.x versions: a breaking change bumps
@@ -76,7 +100,7 @@ pub enum V0Style {
 /// change (`!` header marker or `BREAKING CHANGE:` footer) always means a
 /// major bump, commits matching `skip` contribute no bump at all, and
 /// commits matching nothing fall back to patch.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct BumpsConfig {
     pub v0: V0Style,
@@ -105,12 +129,21 @@ impl Default for BumpsConfig {
 /// `NOTCH__`-prefixed environment variable overrides, e.g.
 /// `NOTCH__RELEASE__DEFAULT_BRANCH=main` overrides `[release] default_branch`.
 pub fn load() -> Result<Config> {
-    let raw = config::Config::builder()
-        .add_source(
-            File::from(Path::new("notch.toml"))
-                .format(FileFormat::Toml)
-                .required(false),
-        )
+    // check if the config exists, it it doesn't, we'll warn the user but supply the config default
+    let notch_path = Path::new("notch.toml");
+
+    let raw = config::Config::builder();
+
+    let raw = if notch_path.exists() {
+        raw.add_source(File::from(notch_path).format(FileFormat::Toml))
+    } else {
+        warn!("notch.toml does not exist, using the default!");
+        // TODO: There is probably a way to skip serializing here and just pass the config object
+        // directly
+        let s = toml::to_string(&Config::default()).context("serialize default config")?;
+        raw.add_source(File::from_str(s.as_str(), FileFormat::Toml))
+    };
+    let raw = raw
         .add_source(
             Environment::with_prefix("NOTCH")
                 .prefix_separator("__")
@@ -164,6 +197,31 @@ fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
+
+    // Regression test for a bug where `token` was `#[serde(skip)]`, which skips both directions —
+    // it wasn't just kept out of the serialized `notch.toml` (the intent), it also meant `token`
+    // could never be populated at all, including via the `NOTCH__REPO__TOKEN` env override that
+    // `load()` relies on. `#[serde(skip_serializing)]` keeps the former without breaking the latter.
+    #[test]
+    fn repo_token_deserializes_even_though_it_is_not_serialized() {
+        let config: RepoConfig = toml::from_str("token = \"abc123\"\n").unwrap();
+        assert_eq!(
+            config.token.unwrap().expose_secret(),
+            "abc123",
+            "token must still deserialize"
+        );
+
+        let config = RepoConfig {
+            token: Some(SecretString::from("abc123")),
+            ..RepoConfig::default()
+        };
+        let serialized = toml::to_string(&config).unwrap();
+        assert!(
+            !serialized.contains("token"),
+            "token must not be written back out: {serialized}"
+        );
+    }
 
     #[test]
     fn shipped_notch_toml_parses_to_defaults() {
