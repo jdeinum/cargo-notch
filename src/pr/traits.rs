@@ -8,6 +8,10 @@ use std::collections::{HashMap, HashSet};
 pub struct CommitInfo {
     pub summary: String,
     pub sha1: String,
+    /// Whether the commit body carries a `BREAKING CHANGE:` /
+    /// `BREAKING-CHANGE:` footer. The header's `!` marker is not reflected
+    /// here — it stays visible in `summary` and is parsed from there.
+    pub breaking: bool,
 }
 
 impl CommitInfo {

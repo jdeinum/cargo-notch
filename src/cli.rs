@@ -19,6 +19,10 @@ pub enum Commands {
     Pr {
         // We used to have the GitHub token here, but its not good to expose it so we'll move it to
         // the config, and just assert its present when we parse the command
+        /// Skip the TUI and derive each crate's bump from its conventional
+        /// commits (see `[bumps]` in notch.toml)
+        #[arg(long)]
+        auto: bool,
     },
     /// Tag crates whose version changed between two commits
     Tag {

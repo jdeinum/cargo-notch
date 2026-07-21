@@ -1,4 +1,6 @@
 mod assign;
+mod auto;
+mod bump;
 mod git;
 mod packages;
 mod run;

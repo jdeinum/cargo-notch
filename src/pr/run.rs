@@ -3,6 +3,7 @@ use crate::config;
 use crate::error::{Error, Result};
 use crate::package::Package;
 use crate::pr::assign::{WorktreeCommitAssigner, prior_bump_sections};
+use crate::pr::auto;
 use crate::pr::git::{commit_changes, open_pr, push_current_branch};
 use crate::pr::packages::CargoPackager;
 use crate::pr::traits::{CommitInfo, PackageCommits, Packages};
@@ -13,7 +14,7 @@ use git2::Repository;
 use secrecy::ExposeSecret;
 use tracing::info;
 
-pub fn run() -> Result<()> {
+pub fn run(auto: bool) -> Result<()> {
     // load the config
     let config = config::load().context("load notch.toml")?;
 
@@ -45,10 +46,24 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    // run the tui so users pick the commit bumps
-    let Some(res) = tui::run(changed_packages_with_commits).context("select version bumps")? else {
-        info!("Cancelled, no changes made");
-        return Ok(());
+    // pick each package's bump: from its conventional commits with --auto,
+    // otherwise interactively via the tui
+    let res = if auto {
+        let res = auto::select(changed_packages_with_commits, &config.bumps);
+        // every changed package's commits can match the skip list, in which
+        // case there's nothing left to release
+        if res.is_empty() {
+            println!("No packages to update, not creating commits or a release pr");
+            return Ok(());
+        }
+        res
+    } else {
+        let Some(res) = tui::run(changed_packages_with_commits).context("select version bumps")?
+        else {
+            info!("Cancelled, no changes made");
+            return Ok(());
+        };
+        res
     };
 
     // bumps that previous runs already committed on this branch, recovered from their trailers —

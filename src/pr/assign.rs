@@ -298,9 +298,17 @@ fn attribute_commits_to_packages(
 impl From<&Commit<'_>> for CommitInfo {
     fn from(value: &Commit<'_>) -> Self {
         let summary = value.summary().ok().flatten().unwrap_or("<no summary>");
+        // per the conventional commits spec, a breaking change can also be
+        // declared in a footer rather than the header's `!` marker
+        let breaking = value.message().is_ok_and(|message| {
+            message
+                .lines()
+                .any(|l| l.starts_with("BREAKING CHANGE:") || l.starts_with("BREAKING-CHANGE:"))
+        });
         Self {
             summary: summary.to_string(),
             sha1: value.id().to_string(),
+            breaking,
         }
     }
 }

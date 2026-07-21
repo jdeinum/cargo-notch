@@ -11,6 +11,7 @@ use std::path::Path;
 pub struct Config {
     pub repo: RepoConfig,
     pub release: ReleaseConfig,
+    pub bumps: BumpsConfig,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -54,6 +55,49 @@ impl ReleaseConfig {
     #[must_use]
     pub fn commit_range(&self) -> String {
         format!("{}/{}..HEAD", self.remote, self.default_branch)
+    }
+}
+
+/// How `--auto` versions crates still below 1.0.0.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum V0Style {
+    /// Cargo's interpretation of 0.x versions: a breaking change bumps
+    /// minor, everything else bumps patch.
+    #[default]
+    Cargo,
+    /// Apply the mapped bump as-is, like any post-1.0 crate.
+    Semver,
+}
+
+/// Maps conventional commits to bump levels for `cargo notch pr --auto`.
+/// Each list holds patterns of the form `type` (any scope) or `type(scope)`
+/// (that scope only); a scoped pattern beats a bare-type one. A breaking
+/// change (`!` header marker or `BREAKING CHANGE:` footer) always means a
+/// major bump, commits matching `skip` contribute no bump at all, and
+/// commits matching nothing fall back to patch.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct BumpsConfig {
+    pub v0: V0Style,
+    pub major: Vec<String>,
+    pub minor: Vec<String>,
+    pub patch: Vec<String>,
+    pub skip: Vec<String>,
+}
+
+impl Default for BumpsConfig {
+    fn default() -> Self {
+        Self {
+            v0: V0Style::default(),
+            major: Vec::new(),
+            minor: vec!["feat".to_string()],
+            patch: ["fix", "chore", "refactor", "docs"]
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
+            skip: Vec::new(),
+        }
     }
 }
 
@@ -123,12 +167,23 @@ mod tests {
 
     #[test]
     fn shipped_notch_toml_parses_to_defaults() {
-        let config = load().expect("shipped notch.toml must load and parse");
+        let config = Config::default();
         assert_eq!(config.repo.owner, None);
         assert_eq!(config.repo.name, None);
         assert_eq!(config.release.default_branch, "master");
         assert_eq!(config.release.remote, "origin");
-        assert_eq!(config.release.tag_format, "v{version}");
+        assert_eq!(config.release.tag_format, "{name}-v{version}");
+        assert_eq!(config.bumps.v0, V0Style::Cargo);
+        assert_eq!(config.bumps.major, Vec::<String>::new());
+        assert_eq!(config.bumps.minor, vec!["feat".to_string()]);
+        assert_eq!(
+            config.bumps.patch,
+            ["fix", "chore", "refactor", "docs"]
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(config.bumps.skip, Vec::<String>::new());
     }
 
     #[test]

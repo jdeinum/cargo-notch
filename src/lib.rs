@@ -22,7 +22,7 @@ use clap::Parser;
 pub fn run() -> Result<()> {
     let CargoCli::Notch(cli) = CargoCli::parse();
     match cli.command {
-        Commands::Pr {} => pr::run().context("run pr"),
+        Commands::Pr { auto } => pr::run(auto).context("run pr"),
         Commands::Tag { old, new } => tag::run(&old, &new).context("run tag"),
     }
 }
