@@ -1,3 +1,8 @@
+## [0.1.23] - 2026-07-21
+
+### 🐛 Bug Fixes
+
+- Env filter for logs
 ## [0.1.22] - 2026-07-20
 
 ### 📚 Documentation
