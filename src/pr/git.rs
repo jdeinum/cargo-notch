@@ -535,10 +535,12 @@ mod tests {
             CommitInfo {
                 summary: "feat: add a thing".to_string(),
                 sha1: "1234567890abcdef".to_string(),
+                breaking: false,
             },
             CommitInfo {
                 summary: "fix: fix a thing".to_string(),
                 sha1: "abcdef1234567890".to_string(),
+                breaking: false,
             },
         ];
         let (_title, body) = get_pr_title_and_description(&[updated]).unwrap();

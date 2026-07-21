@@ -34,6 +34,36 @@ remote URLs are understood.
   Docker build workflow triggering on a `*_service-v*` glob) needs the real
   package name to line up.
 
+## `[bumps]`
+
+Used only by `cargo notch pr --auto`, which skips the interactive TUI and
+derives each changed crate's version bump from its conventional commits: every
+attributed commit is mapped to a bump level and the biggest one wins.
+
+The `major`/`minor`/`patch`/`skip` lists hold patterns of two forms: a bare
+type (`"chore"` — matches any scope) or a scoped type (`"chore(release)"` —
+matches that exact scope only). When both forms match a commit, the scoped one
+wins, so `patch = ["chore"]` plus `skip = ["chore(release)"]` gives every
+chore a patch bump except release chores, which are skipped.
+
+- `v0` (default: `"cargo"`) — how crates still below `1.0.0` are versioned:
+  - `"cargo"` — cargo's interpretation of 0.x versions, where the leading zero
+    shifts everything down: a breaking change bumps minor, everything else
+    bumps patch.
+  - `"semver"` — apply the mapped bump as-is, like any post-1.0 crate.
+- `major` (default: `[]`) — patterns that map to a major bump. A breaking
+  change always maps to major regardless of any list (even `skip`), whether
+  declared via the header's `!` marker (`feat(api)!: …`) or a
+  `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer in the commit body.
+- `minor` (default: `["feat"]`) — patterns that map to a minor bump.
+- `patch` (default: `["fix"]`) — patterns that map to a patch bump. Any
+  commit matching no list at all — including ones that aren't conventional
+  commits — already falls back to a patch bump, since the crate did change;
+  list a type here only to anchor a bare fallback for scoped overrides.
+- `skip` (default: `[]`) — patterns whose commits contribute no bump. A crate
+  whose every attributed commit is skipped is dropped from the release
+  entirely — no version bump, no changelog entry, no PR section.
+
 ## Environment variable overrides
 
 Every field can also be set (or overridden) with a `NOTCH__`-prefixed
@@ -53,4 +83,11 @@ This is the only way to set `repo.token`.
 default_branch = "master"
 remote = "origin"
 tag_format = "{name}-v{version}"
+
+[bumps]
+v0 = "cargo"
+major = []
+minor = ["feat"]
+patch = ["fix"]
+skip = []
 ```

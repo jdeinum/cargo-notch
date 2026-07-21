@@ -23,12 +23,15 @@ impl Package {
     pub fn bump_minor(&self) -> Version {
         let mut new = self.version.clone();
         new.minor += 1;
+        new.patch = 0;
         new
     }
 
     pub fn bump_major(&self) -> Version {
         let mut new = self.version.clone();
         new.major += 1;
+        new.minor = 0;
+        new.patch = 0;
         new
     }
 }

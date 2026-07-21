@@ -1,5 +1,6 @@
 use crate::error::Result;
 use crate::package::Package;
+use crate::pr::bump::Bump;
 use crate::pr::run::UpdatedCrate;
 use crate::pr::traits::CommitInfo;
 use anyhow::Context;
@@ -12,25 +13,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap};
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Bump {
-    Patch,
-    Minor,
-    Major,
-}
-
-impl Bump {
-    const ALL: [Self; 3] = [Self::Patch, Self::Minor, Self::Major];
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Patch => "patch",
-            Self::Minor => "minor",
-            Self::Major => "major",
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Signal {
@@ -447,8 +429,6 @@ mod tests {
         app.handle_key(key(KeyCode::Char('3')));
         let updated = app.into_updated_crates();
         assert_eq!(updated.len(), 1);
-        // `bump_major` only increments `major` (see `Package::bump_major`);
-        // it does not reset `minor`/`patch`.
-        assert_eq!(updated[0].new_version, Version::parse("1.1.0").unwrap());
+        assert_eq!(updated[0].new_version, Version::parse("1.0.0").unwrap());
     }
 }
