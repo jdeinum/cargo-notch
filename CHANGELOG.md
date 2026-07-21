@@ -1,3 +1,8 @@
+## [0.1.24] - 2026-07-21
+
+### 🚀 Features
+
+- Auto versioning
 ## [0.1.23] - 2026-07-21
 
 ### 🐛 Bug Fixes
