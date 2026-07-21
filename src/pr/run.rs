@@ -27,6 +27,7 @@ pub fn run() -> Result<()> {
     // get our packages
     let cargo_packages = CargoPackager::new(".".to_string());
     let packages = cargo_packages.get().context("get packages")?;
+    debug!("packages: {packages:?}");
 
     // keep a copy: rebuilding the PR body later needs to map crate names from prior bump
     // trailers back to their packages
