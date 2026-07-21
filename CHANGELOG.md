@@ -1,3 +1,9 @@
+## [0.1.26] - 2026-07-21
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump deps
+- *(actions)* Install notch with shell installer
 ## [0.1.25] - 2026-07-21
 
 ### 🐛 Bug Fixes
