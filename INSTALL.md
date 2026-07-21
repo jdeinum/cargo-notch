@@ -37,6 +37,8 @@ permissions:
 jobs:
   tag:
     uses: jdeinum/cargo-notch/.github/workflows/tag.yaml@master
+    with:
+      version: v0.1.25
     permissions:
       contents: write
     secrets:
@@ -48,6 +50,11 @@ Notes:
 - `@master` floats on notch's `master` branch. Once notch has tagged releases
   you trust, pin to one instead (e.g. `@cargo-notch-v0.1.12`) so a notch
   change can't silently alter your CI.
+- `version` selects the `cargo-notch` release installed inside the workflow
+  (via the release's shell installer, not `cargo install`). Defaults to
+  `latest`, which floats on whatever GitHub currently marks as the latest
+  release — pin it (e.g. `v0.1.25`) for the same reason you'd pin `@master`
+  above.
 - `release_pat` must be a PAT (not the default `GITHUB_TOKEN`) with
   `contents: write` on your repo, added as a secret named `RELEASE_PAT`.
   This is required, not optional, if you have anything downstream that

@@ -4,6 +4,15 @@ on:
   push:
     branches: [master]
   workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: latest
+        description: >-
+          cargo-notch version to install (e.g. v0.1.25). Defaults to
+          latest, which floats on whatever release GitHub currently marks
+          as latest — pin this once you depend on stable tagging behavior.
     secrets:
       release_pat:
         required: false
@@ -33,11 +42,20 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-notch
-          key: cargo-notch-${{ runner.os }}-${{ github.sha }}
+          key: cargo-notch-${{ runner.os }}-${{ inputs.version }}-${{ github.sha }}
 
       - name: Install cargo-notch
         if: steps.notch-cache.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/jdeinum/cargo-notch cargo-notch
+        shell: bash
+        env:
+          NOTCH_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$NOTCH_VERSION" ] || [ "$NOTCH_VERSION" = "latest" ]; then
+            url="https://github.com/jdeinum/cargo-notch/releases/latest/download/cargo-notch-installer.sh"
+          else
+            url="https://github.com/jdeinum/cargo-notch/releases/download/$NOTCH_VERSION/cargo-notch-installer.sh"
+          fi
+          curl --proto '=https' --tlsv1.2 -LsSf "$url" | sh
 
       - name: Compute new tags
         run: |
