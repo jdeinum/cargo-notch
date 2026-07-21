@@ -8,6 +8,7 @@ repository = "https://github.com/jdeinum/cargo-notch"
 keywords = ["build", "cargo", "versioning", "release", "git"]
 categories = ["development-tools::build-utils", "command-line-utilities"]
 
+
 [dependencies]
 anyhow = "1.0.102"
 cargo_metadata = "0.23.1"

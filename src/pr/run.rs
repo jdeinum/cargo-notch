@@ -10,7 +10,7 @@ use crate::pr::traits::{CommitInfo, PackageCommits, Packages};
 use crate::pr::tui;
 use anyhow::Context;
 use cargo_metadata::semver::Version;
-use git2::Repository;
+use git2::{Repository, Status};
 use secrecy::ExposeSecret;
 use tracing::info;
 
@@ -74,7 +74,7 @@ pub fn run(auto: bool) -> Result<()> {
 
     // actually update the package
     for updated_package in &res {
-        update_package(updated_package, &changelog_range).context("update the package")?;
+        update_package(&repo, updated_package, &changelog_range).context("update the package")?;
     }
 
     // cargo generate-lockfile so we update everything we need
@@ -162,10 +162,49 @@ pub fn update_package_version(updated_crate: &UpdatedCrate, original_location: &
     Ok(())
 }
 
-pub fn update_package(updated_crate: &UpdatedCrate, commit_range: &str) -> Result<()> {
+#[inline]
+fn is_file_dirty(repo: &Repository, path: &std::path::Path) -> Result<bool> {
+    let status = repo.status_file(path)?;
+
+    // "Dirty" = any change in the index or working tree
+    Ok(status.intersects(
+        Status::INDEX_NEW
+            | Status::INDEX_MODIFIED
+            | Status::INDEX_DELETED
+            | Status::INDEX_RENAMED
+            | Status::INDEX_TYPECHANGE
+            | Status::WT_NEW
+            | Status::WT_MODIFIED
+            | Status::WT_DELETED
+            | Status::WT_RENAMED
+            | Status::WT_TYPECHANGE,
+    ))
+}
+
+pub fn update_package(
+    repo: &Repository,
+    updated_crate: &UpdatedCrate,
+    commit_range: &str,
+) -> Result<()> {
     // create a backup of the current Cargo.toml
-    let real_file = format!("{}/Cargo.toml", updated_crate.package.path);
-    let tmp_file = format!("{}/Cargo.toml.bak", updated_crate.package.path);
+    let real_file = updated_crate.package.join("Cargo.toml");
+    let tmp_file = updated_crate.package.join("Cargo.toml.bak");
+
+    // check if either the changelog or the Cargo.toml has changes not yet commited, if so, we
+    // return an error. We don't update anything for consistency, its an all or nothing
+    let changelog_path = updated_crate.package.join("CHANGELOG.md");
+
+    if is_file_dirty(repo, real_file.as_ref()).context("check if Cargo.toml dirty")? {
+        return Err(Error::msg(
+            "Cargo.toml is dirty, please commit the changes and try again",
+        ));
+    }
+
+    if is_file_dirty(repo, changelog_path.as_ref()).context("check if Cargo.toml dirty")? {
+        return Err(Error::msg(
+            "Cargo.toml is dirty, please commit the changes and try again",
+        ));
+    }
 
     // create a backup
     backup_config(&real_file, &tmp_file).context("backup config")?;

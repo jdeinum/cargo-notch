@@ -34,6 +34,19 @@ impl Package {
         new.patch = 0;
         new
     }
+
+    /// Joins this package's path with a filename to get a path relative to
+    /// the repo root. A root-level package is normalized to "." (see
+    /// `get_cleaned_members`), so naive concatenation would produce a
+    /// leading "./" that libgit2 rejects (e.g. from `status_file` or
+    /// `Index::add_path`).
+    pub fn join(&self, file: &str) -> String {
+        if self.path == "." {
+            file.to_string()
+        } else {
+            format!("{}/{file}", self.path)
+        }
+    }
 }
 
 // get the list of packages in the workspace rooted at `dir`

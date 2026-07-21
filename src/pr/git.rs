@@ -3,7 +3,7 @@ use crate::error::{Error, Result};
 use crate::pr::run::UpdatedCrate;
 use anyhow::Context;
 use cargo_metadata::semver::Version;
-use git2::{Commit, Cred, IndexAddOption, PushOptions, RemoteCallbacks, Repository, Signature};
+use git2::{Commit, Cred, PushOptions, RemoteCallbacks, Repository, Signature};
 use octocrab::Octocrab;
 use octocrab::params::State;
 use tracing::debug;
@@ -102,15 +102,24 @@ pub fn changelog_range(release: &ReleaseConfig, last_notch_commit: Option<&Commi
     last_notch_commit.map_or_else(|| release.commit_range(), |c| format!("{}..HEAD", c.id()))
 }
 
-// Commits current changes for this repo
-// TODO: We should only commit the files notch actually touches, and maybe check if they are already
-// dirty and prevent usage if dirty?
+/// Commits the changes made by notch, typically just updating `Cargo.toml` and lockfiles, as well
+/// as the changelogs.
 pub fn commit_changes(repo: &Repository, updated: &[UpdatedCrate]) -> Result<()> {
-    // commit the changelog and version bumps
     let mut index = repo.index().context("get index for repo")?;
-    index
-        .add_all(std::iter::once(&"."), IndexAddOption::DEFAULT, None)
-        .context("add all files to the index")?;
+    for package in updated {
+        // add the cargo.toml
+        let cargo_path = package.package.join("Cargo.toml");
+        index
+            .add_path(cargo_path.as_ref())
+            .context("add cargo.toml to index")?;
+
+        // add the changelog
+        let changelog_path = package.package.join("CHANGELOG.md");
+        index
+            .add_path(changelog_path.as_ref())
+            .context("add changelog to index")?;
+    }
+
     index.write().context("write index to disk")?;
     let sig = notch_signature()?;
     let tree = repo
