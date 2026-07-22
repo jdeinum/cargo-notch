@@ -36,9 +36,10 @@ remote URLs are understood.
 
 ## `[bumps]`
 
-Used only by `cargo notch pr --auto`, which skips the interactive TUI and
-derives each changed crate's version bump from its conventional commits: every
-attributed commit is mapped to a bump level and the biggest one wins.
+Used only by `cargo notch pr --auto` (available since v0.1.24), which skips
+the interactive TUI and derives each changed crate's version bump from its
+conventional commits: every attributed commit is mapped to a bump level and
+the biggest one wins.
 
 The `major`/`minor`/`patch`/`skip` lists hold patterns of two forms: a bare
 type (`"chore"` — matches any scope) or a scoped type (`"chore(release)"` —
@@ -56,10 +57,11 @@ chore a patch bump except release chores, which are skipped.
   declared via the header's `!` marker (`feat(api)!: …`) or a
   `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer in the commit body.
 - `minor` (default: `["feat"]`) — patterns that map to a minor bump.
-- `patch` (default: `["fix"]`) — patterns that map to a patch bump. Any
-  commit matching no list at all — including ones that aren't conventional
-  commits — already falls back to a patch bump, since the crate did change;
-  list a type here only to anchor a bare fallback for scoped overrides.
+- `patch` (default: `["fix", "chore", "refactor", "docs"]`) — patterns that
+  map to a patch bump. Any commit matching no list at all — including ones
+  that aren't conventional commits — already falls back to a patch bump,
+  since the crate did change; list a type here only to anchor a bare fallback
+  for scoped overrides.
 - `skip` (default: `[]`) — patterns whose commits contribute no bump. A crate
   whose every attributed commit is skipped is dropped from the release
   entirely — no version bump, no changelog entry, no PR section.
@@ -88,6 +90,6 @@ tag_format = "{name}-v{version}"
 v0 = "cargo"
 major = []
 minor = ["feat"]
-patch = ["fix"]
+patch = ["fix", "chore", "refactor", "docs"]
 skip = []
 ```
