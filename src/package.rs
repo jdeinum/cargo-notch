@@ -4,6 +4,8 @@ use cargo_metadata::{MetadataCommand, semver::Version};
 use std::path::Path;
 use tracing::debug;
 
+// some docs
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Package {
     /// Workspace-relative directory containing the package's `Cargo.toml`.
@@ -14,27 +16,6 @@ pub struct Package {
 }
 
 impl Package {
-    pub fn bump_patch(&self) -> Version {
-        let mut new = self.version.clone();
-        new.patch += 1;
-        new
-    }
-
-    pub fn bump_minor(&self) -> Version {
-        let mut new = self.version.clone();
-        new.minor += 1;
-        new.patch = 0;
-        new
-    }
-
-    pub fn bump_major(&self) -> Version {
-        let mut new = self.version.clone();
-        new.major += 1;
-        new.minor = 0;
-        new.patch = 0;
-        new
-    }
-
     /// Joins this package's path with a filename to get a path relative to
     /// the repo root. A root-level package is normalized to "." (see
     /// `get_cleaned_members`), so naive concatenation would produce a

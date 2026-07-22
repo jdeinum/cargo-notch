@@ -33,4 +33,6 @@ pub enum Commands {
         #[arg(long)]
         new: String,
     },
+    /// Init creates the github action and config file according to the defaults for our configs
+    Init {},
 }

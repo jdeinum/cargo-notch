@@ -82,18 +82,22 @@ pub fn parse_bump_trailer(commit: &Commit) -> Vec<BumpRecord> {
         .collect()
 }
 
-// A commit is notch's own release commit only if both the committer identity and the trailer match
-// — either alone could plausibly be forged or coincidental, but not both together.
+// A commit is notch's own release commit only if both its identity and the trailer match — either
+// alone could plausibly be forged or coincidental, but not both together. Checked via the
+// *author*, not the committer: a rebase, cherry-pick, or `commit --amend` stamps a new committer
+// (whoever ran the operation) while preserving the original author, so committer-based detection
+// silently stops recognizing a notch commit the moment it's replayed onto a new base — which is
+// routine for a bump commit sitting on an unmerged branch.
 pub fn is_notch_commit(commit: &Commit) -> bool {
-    let committer_matches = commit
-        .committer()
+    let author_matches = commit
+        .author()
         .email()
         .is_ok_and(|e| e == NOTCH_COMMITTER_EMAIL);
     let has_trailer = commit.message().is_ok_and(|m| {
         m.lines()
             .any(|l| l.starts_with(&format!("{NOTCH_TRAILER_KEY}:")))
     });
-    committer_matches && has_trailer
+    author_matches && has_trailer
 }
 
 // The range git-cliff should scan: since the last notch bump if one exists in this branch's
@@ -419,6 +423,39 @@ mod tests {
         );
         let commit = repo.find_commit(oid).unwrap();
         assert!(!is_notch_commit(&commit));
+
+        let _ = fs::remove_dir_all(repo.workdir().unwrap());
+    }
+
+    // Regression test: a rebase, cherry-pick, or amend stamps a new committer (whoever performed
+    // the operation) while preserving the original author — routine for a bump commit sitting on
+    // an unmerged branch that gets rebased. Detection must survive that.
+    #[test]
+    fn notch_commit_is_still_recognized_after_its_committer_changes() {
+        let updated = vec![updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0))];
+        let message = format!("{NOTCH_COMMIT_MESSAGE}\n\n{}", build_bump_trailer(&updated));
+
+        let dir = std::env::temp_dir().join(format!(
+            "notch-pr-test-rebased-committer-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let repo = Repository::init(&dir).unwrap();
+        fs::write(dir.join("file.txt"), "hello").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("file.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+
+        let author = notch_signature().unwrap();
+        let rebaser = Signature::now("github-actions[bot]", "someone@example.com").unwrap();
+        let oid = repo
+            .commit(Some("HEAD"), &author, &rebaser, &message, &tree, &[])
+            .unwrap();
+
+        let commit = repo.find_commit(oid).unwrap();
+        assert!(is_notch_commit(&commit));
 
         let _ = fs::remove_dir_all(repo.workdir().unwrap());
     }

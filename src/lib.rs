@@ -2,6 +2,7 @@ pub(crate) mod cli;
 pub(crate) mod cmd;
 pub(crate) mod config;
 pub(crate) mod error;
+pub(crate) mod init;
 pub(crate) mod package;
 pub(crate) mod pr;
 pub(crate) mod tag;
@@ -24,5 +25,6 @@ pub fn run() -> Result<()> {
     match cli.command {
         Commands::Pr { auto } => pr::run(auto).context("run pr"),
         Commands::Tag { old, new } => tag::run(&old, &new).context("run tag"),
+        Commands::Init {} => init::run().context("init notch"),
     }
 }

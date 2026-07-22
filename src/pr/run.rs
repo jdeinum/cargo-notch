@@ -12,8 +12,19 @@ use anyhow::Context;
 use cargo_metadata::semver::Version;
 use git2::{Repository, Status};
 use secrecy::ExposeSecret;
+use std::collections::HashMap;
 use tracing::info;
 
+/// Run notch PR:
+///
+/// 1. finds the packages in the project and, per package, the commits attributed to it since the
+///    last notch bump commit (or since diverging from upstream, if there isn't one yet)
+/// 2. for a package with prior, still-unmerged bump sections on this branch, poaches those
+///    sections' commits into this run's — a `fix` landing after an already-staged `feat` bump
+///    doesn't need its own patch bump on top, since nothing has actually released yet, but it
+///    still needs to end up in the changelog (see the `poached_commits` comment below)
+/// 3. picks each (possibly poached) package's bump — automatically from conventional commits
+///    with `--auto`, otherwise interactively via the tui — then commits and pushes the result
 pub fn run(auto: bool) -> Result<()> {
     // load the config
     let config = config::load().context("load notch.toml")?;
@@ -39,6 +50,52 @@ pub fn run(auto: bool) -> Result<()> {
     let (changed_packages_with_commits, repo, changelog_range) = worktree_assigner
         .get(&config.release, packages)
         .context("get commits for packages")?;
+
+    // bumps that previous, still-unmerged runs already committed on this branch, recovered from
+    // their trailers. Computed before commit_changes so this run's own bump commit isn't in the
+    // walked range.
+    let prior_bumps = prior_bump_sections(&repo, &config.release, &all_packages)
+        .context("collect prior bump sections")?;
+
+    // each package's prior sections' commits, oldest first, keyed by package name — since
+    // nothing on this branch has actually released yet, a package that already has a staged bump
+    // needs its whole not-yet-released history considered when deciding whether fresh commits
+    // require escalating past it, and that history needs to end up in the regenerated changelog
+    // entry rather than being silently dropped. `baselines` remembers each such package's version
+    // *before* its first still-unmerged bump (the oldest section, since `prior_bumps` is oldest
+    // first) — bumps must be applied there, not to the package's current version, or a fresh
+    // commit no more severe than what's already staged would double-bump it (see `Bump::apply_to`).
+    let mut poached_commits: HashMap<String, Vec<CommitInfo>> = HashMap::new();
+    let mut baselines: HashMap<String, Version> = HashMap::new();
+    for section in &prior_bumps {
+        baselines
+            .entry(section.package.name.clone())
+            .or_insert_with(|| section.package.version.clone());
+        poached_commits
+            .entry(section.package.name.clone())
+            .or_default()
+            .extend(section.commits.iter().cloned());
+    }
+
+    // fold each package's poached commits in ahead of its fresh ones, and pair it with its
+    // baseline — see `poached_commits`/`baselines` above. A package with no prior sections has no
+    // history to poach and its baseline is just its own current version.
+    let changed_packages_with_commits: HashMap<Package, (Version, Vec<CommitInfo>)> =
+        changed_packages_with_commits
+            .into_iter()
+            .map(|(package, fresh)| {
+                let baseline = baselines
+                    .get(&package.name)
+                    .cloned()
+                    .unwrap_or_else(|| package.version.clone());
+                let mut commits = poached_commits
+                    .get(&package.name)
+                    .cloned()
+                    .unwrap_or_default();
+                commits.extend(fresh);
+                (package, (baseline, commits))
+            })
+            .collect();
 
     // nothing to do, just return
     if changed_packages_with_commits.is_empty() {
@@ -66,15 +123,18 @@ pub fn run(auto: bool) -> Result<()> {
         res
     };
 
-    // bumps that previous runs already committed on this branch, recovered from their trailers —
-    // the PR body must describe the whole branch, not just this run's delta. Computed before
-    // commit_changes so this run's own bump commit isn't in the walked range.
-    let prior_bumps = prior_bump_sections(&repo, &config.release, &all_packages)
-        .context("collect prior bump sections")?;
-
-    // actually update the package
+    // actually update the package: one with poached prior sections gets its changelog entry
+    // regenerated over the whole branch (its old entry no longer describes what's about to ship,
+    // see `update_package`'s `poached` argument); one bumped for the first time on this branch
+    // only needs the range since the last notch commit
     for updated_package in &res {
-        update_package(&repo, updated_package, &changelog_range).context("update the package")?;
+        let poached = poached_commits.contains_key(&updated_package.package.name);
+        let range = if poached {
+            config.release.commit_range()
+        } else {
+            changelog_range.clone()
+        };
+        update_package(&repo, updated_package, &range, poached).context("update the package")?;
     }
 
     // cargo generate-lockfile so we update everything we need
@@ -86,9 +146,14 @@ pub fn run(auto: bool) -> Result<()> {
     // push to the remote
     push_current_branch(&repo, &config.release).context("push current branch")?;
 
-    // the PR describes every bump on the branch: prior runs' sections (oldest first), then this
-    // run's
-    let mut all_updated = prior_bumps;
+    // the PR describes every bump on the branch: prior runs' sections for packages this run
+    // didn't touch (oldest first), then this run's — a package this run did touch had its prior
+    // sections poached into its new one above, so its old standalone sections are dropped here to
+    // avoid describing the same commits twice
+    let mut all_updated: Vec<UpdatedCrate> = prior_bumps
+        .into_iter()
+        .filter(|section| !res.iter().any(|r| r.package.name == section.package.name))
+        .collect();
     all_updated.extend(res);
 
     // open the PR
@@ -124,6 +189,30 @@ fn generate_changelog(tag: &str, crate_path: &str, commit_range: &str) -> Result
     ])
     .context("generate changelog using git cliff")?;
     Ok(())
+}
+
+/// Removes the `## [<version>]` section (from its heading up to, but not including, the next
+/// `## [` heading, or up to the end of the file) from changelog content, if present. Used before
+/// regenerating a poached package's changelog entry, so the superseded entry for its previously
+/// staged version doesn't linger alongside the new consolidated one — see `update_package`.
+fn strip_changelog_section(content: &str, version: &Version) -> String {
+    let heading = format!("## [{version}]");
+    let Some(heading_start) = content
+        .match_indices(&heading)
+        .map(|(i, _)| i)
+        .find(|&i| i == 0 || content.as_bytes()[i - 1] == b'\n')
+    else {
+        return content.to_string();
+    };
+
+    let after_heading = heading_start + heading.len();
+    let section_end = content[after_heading..]
+        .find("\n## [")
+        .map_or(content.len(), |rel| after_heading + rel + 1);
+
+    let mut result = content[..heading_start].to_string();
+    result.push_str(&content[section_end..]);
+    result
 }
 
 pub struct UpdatedCrate {
@@ -185,6 +274,7 @@ pub fn update_package(
     repo: &Repository,
     updated_crate: &UpdatedCrate,
     commit_range: &str,
+    poached: bool,
 ) -> Result<()> {
     // create a backup of the current Cargo.toml
     let real_file = updated_crate.package.join("Cargo.toml");
@@ -222,6 +312,17 @@ pub fn update_package(
         }
     }
 
+    // this package's changelog entry is being regenerated over its whole (poached) history, not
+    // just this run's delta — strip the entry that superseded version left behind so it doesn't
+    // linger duplicated alongside the new consolidated one
+    if poached {
+        let changelog_path = updated_crate.package.join("CHANGELOG.md");
+        let existing = std::fs::read_to_string(&changelog_path)
+            .context("read changelog to strip its superseded section")?;
+        let stripped = strip_changelog_section(&existing, &updated_crate.package.version);
+        std::fs::write(&changelog_path, stripped).context("write stripped changelog")?;
+    }
+
     // generate the changelog entry using git cliff,
     generate_changelog(
         &updated_crate.new_version.to_string(),
@@ -230,4 +331,70 @@ pub fn update_package(
     )
     .context("generate changelog")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(s: &str) -> Version {
+        Version::parse(s).unwrap()
+    }
+
+    #[test]
+    fn strips_the_only_section() {
+        let content = "# Changelog\n\n## [1.3.0] - 2026-01-01\n\n### Features\n\n- add x\n";
+        assert_eq!(
+            strip_changelog_section(content, &v("1.3.0")),
+            "# Changelog\n\n"
+        );
+    }
+
+    #[test]
+    fn strips_only_the_matching_section_and_keeps_others() {
+        let content = "\
+# Changelog
+
+## [1.3.0] - 2026-01-02
+
+### Features
+
+- add y
+
+## [1.2.0] - 2026-01-01
+
+### Features
+
+- add x
+";
+        let stripped = strip_changelog_section(content, &v("1.3.0"));
+        assert!(!stripped.contains("1.3.0"));
+        assert!(stripped.contains("## [1.2.0] - 2026-01-01"));
+        assert!(stripped.contains("- add x"));
+    }
+
+    #[test]
+    fn leaves_content_unchanged_when_version_not_present() {
+        let content = "# Changelog\n\n## [1.2.0] - 2026-01-01\n\n- add x\n";
+        assert_eq!(strip_changelog_section(content, &v("1.3.0")), content);
+    }
+
+    #[test]
+    fn strips_a_section_at_the_end_of_the_file_with_no_trailing_heading() {
+        let content = "# Changelog\n\n## [2.0.0] - 2026-01-01\n\n- breaking change\n";
+        assert_eq!(
+            strip_changelog_section(content, &v("2.0.0")),
+            "# Changelog\n\n"
+        );
+    }
+
+    #[test]
+    fn does_not_match_a_heading_that_is_not_at_the_start_of_a_line() {
+        // a body line that happens to contain the heading text mid-line must not be treated as
+        // the section's own heading
+        let content =
+            "# Changelog\n\n## [1.3.0] - 2026-01-01\n\n- mentions ## [1.3.0] in passing\n";
+        let stripped = strip_changelog_section(content, &v("1.3.0"));
+        assert_eq!(stripped, "# Changelog\n\n");
+    }
 }

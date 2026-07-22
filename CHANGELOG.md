@@ -1,3 +1,8 @@
+## [0.1.27] - 2026-07-22
+
+### 🚀 Features
+
+- Correct PR behavior
 ## [0.1.26] - 2026-07-21
 
 ### ⚙️ Miscellaneous Tasks
