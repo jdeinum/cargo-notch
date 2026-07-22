@@ -29,7 +29,8 @@ If you have ideas, please create an issue!
 ## Who is Notch for?
 
 Notch is ideal for teams already practicing trunk based development that
-want to retain control of deciding version bumps manually. To have notch
+want to retain control of deciding version bumps manually (with an optional
+conventional-commit based auto mode). To have notch
 automatically start builds, you also need a way of calling notch with the
 current HEAD and previous HEAD so it can find which packages in your project
 actually changed.
@@ -40,8 +41,6 @@ downstream consumers.
 
 ## Roadmap
 
-NOTE: I am still working on the alpha, please do not use this yet!
-
 - ✅ Initial prototype - [39d5eea](https://github.com/jdeinum/cargo-notch/commit/39d5eea1943a79ad88419e876f41917d15ed906f)
 - ✅ Github action that creates tags from merged PRs matching specs - [085c478](https://github.com/jdeinum/cargo-notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
 - ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/cargo-notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
@@ -50,7 +49,7 @@ NOTE: I am still working on the alpha, please do not use this yet!
 - ✅ Working TUI - [79ce715](https://github.com/jdeinum/cargo-notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
 - ✅ Contention Handling - [79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91)
 - ✅ Test Harness - [9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681)
-- ☑️ Auto versioning option
+- ✅ Auto versioning option (`cargo notch pr --auto`, since v0.1.24) - [dbf9b6a](https://github.com/jdeinum/cargo-notch/commit/dbf9b6afcfa724258a1e1d3ea278b80c3689805b)
 - ☑️ Release v1.0.0
 
 ## Example
@@ -69,6 +68,10 @@ git commit -m "feat: added the add_two function"
 # (the token is read from config/env, not passed on the command line — see CONFIGURATION.md)
 NOTCH__REPO__TOKEN=<github-token> cargo notch pr
 
+# or, since v0.1.24, skip the TUI and derive bumps from conventional commits
+# (see the [bumps] section in CONFIGURATION.md)
+NOTCH__REPO__TOKEN=<github-token> cargo notch pr --auto
+
 # merge PR on github or from cli
 gh pr merge <pr_number>
 
@@ -83,8 +86,9 @@ Notch takes heavy inspiration from tools like
 [release-plz](https://github.com/release-plz/release-plz), but rather than
 versioning against git tags or crates.io, it versions exclusively against your
 production branch (likely `origin/master` or `origin/main`). Additionally, it
-keeps version management as a manual step, making this usable even if you are
-not using conventional commits.
+keeps version management as a manual step by default, making this usable even
+if you are not using conventional commits. If you do use conventional commits,
+`cargo notch pr --auto` (added in v0.1.24) can derive the bumps for you.
 
 This allows the codebase to remain super simple, as all we need to do is compare
 our current HEAD against what's on the production branch.
@@ -102,8 +106,10 @@ which is often implemented through the following items:
 5. Branch off of origin/master rather than local master
 
 Some other considerations are that notch does not strive to verify your public
-API changes, nor does it automatically decide your next version, instead it
-shows you all of the commits included, grouped by type, and lets you decide.
+API changes. By default it also doesn't decide your next version — it shows
+you all of the commits included, grouped by type, and lets you decide. Since
+v0.1.24 you can opt into automatic bumps with `cargo notch pr --auto`, which
+maps conventional commits to bump levels via the `[bumps]` config section.
 
 ## Development
 
