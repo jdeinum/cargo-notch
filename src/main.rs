@@ -8,6 +8,9 @@ pub fn main() {
         .init();
     match run() {
         Ok(()) => {}
-        Err(e) => error!("Error running the build tool: {e:?}"),
+        Err(e) => {
+            error!("Error running the build tool: {e:?}");
+            std::process::exit(1);
+        }
     }
 }

@@ -48,7 +48,7 @@ pub fn run(auto: bool) -> Result<()> {
     let repo: Repository = Repository::init(".").context("open repo")?;
     let mut worktree_assigner = WorktreeCommitAssigner::new(repo);
     let (changed_packages_with_commits, repo, changelog_range) = worktree_assigner
-        .get(&config.release, packages)
+        .get(&config, packages)
         .context("get commits for packages")?;
 
     // bumps that previous, still-unmerged runs already committed on this branch, recovered from
@@ -144,7 +144,7 @@ pub fn run(auto: bool) -> Result<()> {
     commit_changes(&repo, &res).context("commit changes to the repo")?;
 
     // push to the remote
-    push_current_branch(&repo, &config.release).context("push current branch")?;
+    push_current_branch(&repo, &config).context("push current branch")?;
 
     // the PR describes every bump on the branch: prior runs' sections for packages this run
     // didn't touch (oldest first), then this run's — a package this run did touch had its prior
@@ -253,7 +253,12 @@ pub fn update_package_version(updated_crate: &UpdatedCrate, original_location: &
 
 #[inline]
 fn is_file_dirty(repo: &Repository, path: &std::path::Path) -> Result<bool> {
-    let status = repo.status_file(path)?;
+    let status = match repo.status_file(path) {
+        Ok(status) => status,
+        // a file that doesn't exist at all yet (e.g. a crate's first CHANGELOG.md) can't be dirty
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
 
     // "Dirty" = any change in the index or working tree
     Ok(status.intersects(
@@ -321,6 +326,12 @@ pub fn update_package(
             .context("read changelog to strip its superseded section")?;
         let stripped = strip_changelog_section(&existing, &updated_crate.package.version);
         std::fs::write(&changelog_path, stripped).context("write stripped changelog")?;
+    }
+
+    // git cliff --prepend requires the changelog to exist — a crate that has never released
+    // before won't have one yet
+    if !std::path::Path::new(&changelog_path).exists() {
+        std::fs::write(&changelog_path, "").context("create empty changelog")?;
     }
 
     // generate the changelog entry using git cliff,

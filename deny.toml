@@ -39,4 +39,5 @@ skip = [
     { crate = "untrusted" },
     { crate = "hashbrown" },
     { crate = "syn" },
+    { crate = "openssl-probe" },
 ]

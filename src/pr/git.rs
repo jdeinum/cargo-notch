@@ -3,9 +3,10 @@ use crate::error::{Error, Result};
 use crate::pr::run::UpdatedCrate;
 use anyhow::Context;
 use cargo_metadata::semver::Version;
-use git2::{Commit, Cred, PushOptions, RemoteCallbacks, Repository, Signature};
+use git2::{Commit, Cred, CredentialType, PushOptions, RemoteCallbacks, Repository, Signature};
 use octocrab::Octocrab;
 use octocrab::params::State;
+use secrecy::{ExposeSecret, SecretString};
 use tracing::debug;
 
 // Notch identity
@@ -21,13 +22,28 @@ pub fn notch_signature<'a>() -> Result<Signature<'a>> {
     Signature::now(NOTCH_COMMITTER_NAME, NOTCH_COMMITTER_EMAIL).context("build notch signature")
 }
 
-// Shared by every remote operation (fetch, push) that needs to authenticate — relies on the
-// caller already having an SSH agent with the right key loaded, since notch has no other way
-// to get credentials.
-pub fn ssh_credentials() -> RemoteCallbacks<'static> {
+// Shared by every remote operation (fetch, push) that needs to authenticate — SSH remotes rely
+// on the caller already having an ssh-agent with the right key loaded, HTTPS remotes on the
+// GitHub token from config (the same one the PR API uses).
+pub fn remote_credentials(token: Option<SecretString>) -> RemoteCallbacks<'static> {
     let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(|_url, username, _allowed| {
-        Cred::ssh_key_from_agent(username.unwrap_or("git"))
+    callbacks.credentials(move |_url, username, allowed| {
+        if allowed.contains(CredentialType::SSH_KEY) {
+            return Cred::ssh_key_from_agent(username.unwrap_or("git"));
+        }
+        if allowed.contains(CredentialType::USER_PASS_PLAINTEXT) {
+            return token.as_ref().map_or_else(
+                || {
+                    Err(git2::Error::from_str(
+                        "authenticating to an https remote needs the github token (NOTCH__REPO__TOKEN)",
+                    ))
+                },
+                |token| Cred::userpass_plaintext("x-access-token", token.expose_secret()),
+            );
+        }
+        Err(git2::Error::from_str(
+            "remote offered no supported auth method (ssh-agent for ssh remotes, token for https)",
+        ))
     });
     callbacks
 }
@@ -143,20 +159,35 @@ pub fn commit_changes(repo: &Repository, updated: &[UpdatedCrate]) -> Result<()>
     Ok(())
 }
 
-pub fn push_current_branch(repo: &Repository, release: &ReleaseConfig) -> Result<()> {
-    let head = repo.head().context("get head")?;
-    let branch = head.name().context("get head name")?;
+pub fn push_current_branch(repo: &Repository, config: &Config) -> Result<()> {
+    let release = &config.release;
+    let mut branch = git2::Branch::wrap(repo.head().context("get head")?);
+    let refname = branch.get().name().context("get head name")?.to_string();
 
     let mut remote = repo.find_remote(&release.remote).context("get remote")?;
 
     debug!("Found remote {}", release.remote);
 
     let mut opts = PushOptions::new();
-    opts.remote_callbacks(ssh_credentials());
+    opts.remote_callbacks(remote_credentials(config.repo.token.clone()));
 
-    // refspec: local:remote
-    let refspec = format!("{branch}:{branch}");
+    // refspec: local:remote — creates the branch on the remote if it doesn't exist yet
+    let refspec = format!("{refname}:{refname}");
     remote.push(&[&refspec], Some(&mut opts))?;
+
+    // `git push -u` equivalent: a branch whose remote ref the push above just created has no
+    // upstream configured, and open_pr resolves the upstream — without this it fails on any
+    // branch that wasn't already pushed manually with `-u`.
+    if branch.upstream().is_err() {
+        let short = branch
+            .name()
+            .context("get local branch name")?
+            .ok_or_else(|| Error::msg("branch name is not valid utf-8"))?
+            .to_string();
+        branch
+            .set_upstream(Some(&format!("{}/{short}", release.remote)))
+            .context("set upstream for pushed branch")?;
+    }
 
     Ok(())
 }
