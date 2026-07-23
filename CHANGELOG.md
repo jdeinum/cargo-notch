@@ -1,3 +1,12 @@
+## [1.0.1] - 2026-07-23
+
+### 🐛 Bug Fixes
+
+- Support both transports
+
+### 📚 Documentation
+
+- Readme
 ## [1.0.0] - 2026-07-22
 
 ### 📚 Documentation
