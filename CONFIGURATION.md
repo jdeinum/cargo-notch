@@ -11,9 +11,11 @@ is optional — add one only to override what you need.
 - `name` (optional) — GitHub repository name the PR is opened against.
   Defaults to the repo name parsed from the `origin` remote's URL.
 - `token` (required for `cargo notch pr`) — GitHub token used to open the
-  release PR. There's no CLI flag for this and it shouldn't go in `notch.toml`
-  either, since that file is normally committed — set it via the
-  `NOTCH__REPO__TOKEN` environment variable instead (see below).
+  release PR, and to authenticate git fetch/push when the remote is an HTTPS
+  URL (SSH remotes authenticate through your ssh-agent instead). There's no
+  CLI flag for this and it shouldn't go in `notch.toml` either, since that
+  file is normally committed — set it via the `NOTCH__REPO__TOKEN`
+  environment variable instead (see below).
 
 Only set `owner`/`name` when `origin` doesn't point at the GitHub repo you
 actually want (e.g. a fork or a mirror). Both SSH

@@ -1,7 +1,7 @@
-use crate::config::ReleaseConfig;
+use crate::config::{Config, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::package::Package;
-use crate::pr::git::{changelog_range, is_notch_commit, parse_bump_trailer, ssh_credentials};
+use crate::pr::git::{changelog_range, is_notch_commit, parse_bump_trailer, remote_credentials};
 use crate::pr::run::UpdatedCrate;
 use crate::pr::traits::{CommitInfo, PackageCommits};
 use anyhow::Context;
@@ -27,7 +27,7 @@ impl PackageCommits for WorktreeCommitAssigner {
     #[instrument(skip_all)]
     fn get(
         &mut self,
-        config: &ReleaseConfig,
+        config: &Config,
         packages: HashSet<Package>,
     ) -> Result<(HashMap<Package, Vec<CommitInfo>>, Repository, String)> {
         let repo = self
@@ -36,6 +36,7 @@ impl PackageCommits for WorktreeCommitAssigner {
             .ok_or_else(|| Error::msg("WorktreeCommitAssigner's repo was already taken"))?;
 
         fetch_remote(&repo, config).context("fetch remote")?;
+        let config = &config.release;
 
         // Scoped so every `Commit<'_>` borrowing `repo` (and their `Drop` impls) is gone before
         // `repo` is moved into the return value below.
@@ -75,13 +76,14 @@ impl PackageCommits for WorktreeCommitAssigner {
 // Updates the local `<remote>/<default_branch>` tracking ref before we diff against it. Without
 // this, a stale local ref makes `commit_range()` include far more history than is actually
 // unmerged, and every package ever touched in that stale range gets (incorrectly) flagged as changed.
-fn fetch_remote(repo: &Repository, release: &ReleaseConfig) -> Result<()> {
+fn fetch_remote(repo: &Repository, config: &Config) -> Result<()> {
+    let release = &config.release;
     let mut remote = repo
         .find_remote(&release.remote)
         .context("get remote to fetch")?;
 
     let mut opts = FetchOptions::new();
-    opts.remote_callbacks(ssh_credentials());
+    opts.remote_callbacks(remote_credentials(config.repo.token.clone()));
 
     remote
         .fetch(&[&release.default_branch], Some(&mut opts), None)

@@ -1,4 +1,4 @@
-use crate::config::ReleaseConfig;
+use crate::config::Config;
 use crate::error::Result;
 use crate::package::Package;
 use git2::Repository;
@@ -32,7 +32,7 @@ pub trait PackageCommits {
     /// here rather than by the caller since finding it requires the same commit walk this does.
     fn get(
         &mut self,
-        config: &ReleaseConfig,
+        config: &Config,
         packages: HashSet<Package>,
     ) -> Result<(HashMap<Package, Vec<CommitInfo>>, Repository, String)>;
 }

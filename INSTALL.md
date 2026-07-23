@@ -1,5 +1,19 @@
 # Installation
 
+## Prerequisites
+
+`cargo notch pr` needs, in addition to the binary itself:
+
+- [git-cliff](https://git-cliff.org/) on your `PATH` — notch shells out to
+  `git cliff` to generate changelogs.
+- A way to authenticate git fetch/push against your remote:
+  - **SSH** remotes (`git@github.com:owner/repo.git`) — a running ssh-agent
+    with a key loaded.
+  - **HTTPS** remotes (`https://github.com/owner/repo`) — nothing extra; the
+    GitHub token you already provide via `NOTCH__REPO__TOKEN` is used.
+
+`cargo notch tag` (what the generated GitHub Action runs) needs neither.
+
 ## Step 1: Install Binary
 
 ### Install from Release
