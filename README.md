@@ -50,7 +50,7 @@ downstream consumers.
 - ✅ Contention Handling - [79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91)
 - ✅ Test Harness - [9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681)
 - ✅ Auto versioning option (`cargo notch pr --auto`, since v0.1.24) - [dbf9b6a](https://github.com/jdeinum/cargo-notch/commit/dbf9b6afcfa724258a1e1d3ea278b80c3689805b)
-- ☑️ Release v1.0.0
+- ✅ Release v1.0.0 - [ae03a87](https://github.com/jdeinum/cargo-notch/commit/ae03a87ee4814d70fb31da21f87c7d491b51e93c)
 
 ## Example
 
