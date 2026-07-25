@@ -1,81 +1,81 @@
-## [1.0.1] - 2026-07-23
+## [1.0.1](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.0..cargo-notch-v1.0.1) - 2026-07-23
 
 ### 🐛 Bug Fixes
 
-- Support both transports
+- Support both transports - ([#59](https://github.com/jdeinum/cargo-notch/issues/59)) - ([dbc6c06](https://github.com/jdeinum/cargo-notch/commit/dbc6c068848b57eb07af071135b17ae6759b62e5))
 
 ### 📚 Documentation
 
-- Readme
-## [1.0.0] - 2026-07-22
+- Readme - ([#59](https://github.com/jdeinum/cargo-notch/issues/59)) - ([dbc6c06](https://github.com/jdeinum/cargo-notch/commit/dbc6c068848b57eb07af071135b17ae6759b62e5))
+## [1.0.0](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v0.1.27..cargo-notch-v1.0.0) - 2026-07-22
 
 ### 📚 Documentation
 
-- 1.0.0
-## [0.1.27] - 2026-07-22
+- 1.0.0 - ([#57](https://github.com/jdeinum/cargo-notch/issues/57)) - ([ae03a87](https://github.com/jdeinum/cargo-notch/commit/ae03a87ee4814d70fb31da21f87c7d491b51e93c))
+## [0.1.27](https://github.com/jdeinum/cargo-notch/compare/v0.1.26..cargo-notch-v0.1.27) - 2026-07-22
 
 ### 🚀 Features
 
-- Correct PR behavior
-## [0.1.26] - 2026-07-21
+- Correct PR behavior - ([#56](https://github.com/jdeinum/cargo-notch/issues/56)) - ([d7146fa](https://github.com/jdeinum/cargo-notch/commit/d7146fab50655409cec7f86fecf6b1d36670117b))
+## [0.1.26](https://github.com/jdeinum/cargo-notch/compare/v0.1.25..v0.1.26) - 2026-07-21
 
 ### ⚙️ Miscellaneous Tasks
 
-- Bump deps
-- *(actions)* Install notch with shell installer
-## [0.1.25] - 2026-07-21
+- Bump deps - ([#55](https://github.com/jdeinum/cargo-notch/issues/55)) - ([fe52232](https://github.com/jdeinum/cargo-notch/commit/fe52232af9d2049c79ecf8896089137b4ca26c2a))
+- *(actions)* Install notch with shell installer - ([#55](https://github.com/jdeinum/cargo-notch/issues/55)) - ([fe52232](https://github.com/jdeinum/cargo-notch/commit/fe52232af9d2049c79ecf8896089137b4ca26c2a))
+## [0.1.25](https://github.com/jdeinum/cargo-notch/compare/v0.1.24..v0.1.25) - 2026-07-21
 
 ### 🐛 Bug Fixes
 
-- Only commit files notch touched
-## [0.1.24] - 2026-07-21
+- Only commit files notch touched - ([#54](https://github.com/jdeinum/cargo-notch/issues/54)) - ([409ed34](https://github.com/jdeinum/cargo-notch/commit/409ed345977528a2c07fb9bb59db359300659d0a))
+## [0.1.24](https://github.com/jdeinum/cargo-notch/compare/v0.1.23..v0.1.24) - 2026-07-21
 
 ### 🚀 Features
 
-- Auto versioning
-## [0.1.23] - 2026-07-21
+- Auto versioning - ([#53](https://github.com/jdeinum/cargo-notch/issues/53)) - ([dbf9b6a](https://github.com/jdeinum/cargo-notch/commit/dbf9b6afcfa724258a1e1d3ea278b80c3689805b))
+## [0.1.23](https://github.com/jdeinum/cargo-notch/compare/v0.1.22..v0.1.23) - 2026-07-21
 
 ### 🐛 Bug Fixes
 
-- Env filter for logs
-## [0.1.22] - 2026-07-20
+- Env filter for logs - ([#50](https://github.com/jdeinum/cargo-notch/issues/50)) - ([5d49a40](https://github.com/jdeinum/cargo-notch/commit/5d49a402d3bdcd23a110387bd14f957b539dc24a))
+## [0.1.22](https://github.com/jdeinum/cargo-notch/compare/v0.1.21..v0.1.22) - 2026-07-20
 
 ### 📚 Documentation
 
-- Update roadmap
-- No more auto merge
-## [0.1.21] - 2026-07-20
+- Update roadmap - ([#44](https://github.com/jdeinum/cargo-notch/issues/44)) - ([fd1b6ec](https://github.com/jdeinum/cargo-notch/commit/fd1b6ec7c818fc5da40e94e9c60e2aa08e9402d5))
+- No more auto merge - ([#44](https://github.com/jdeinum/cargo-notch/issues/44)) - ([fd1b6ec](https://github.com/jdeinum/cargo-notch/commit/fd1b6ec7c818fc5da40e94e9c60e2aa08e9402d5))
+## [0.1.21](https://github.com/jdeinum/cargo-notch/compare/v0.1.20..v0.1.21) - 2026-07-20
 
 ### 🚀 Features
 
-- Hiding git details behind interface
-- Trait for consistency
+- Hiding git details behind interface - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
+- Trait for consistency - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
 
 ### 🐛 Bug Fixes
 
-- Trust manifest root
-- Calling multiple times updates the pr
+- Trust manifest root - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
+- Calling multiple times updates the pr - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
 
 ### 🚜 Refactor
 
-- Put ssh auth in its own function
-- Move package into shared type
+- Put ssh auth in its own function - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
+- Move package into shared type - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
 
 ### 📚 Documentation
 
-- Update readme / config / justfile for proper token usage
-- Rename to cargo-notch
-- Readme
-## [0.1.20] - 2026-07-19
+- Update readme / config / justfile for proper token usage - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
+- Rename to cargo-notch - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
+- Readme - ([#41](https://github.com/jdeinum/cargo-notch/issues/41)) - ([9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681))
+## [0.1.20](https://github.com/jdeinum/cargo-notch/compare/v0.1.19..v0.1.20) - 2026-07-19
 
 ### 🐛 Bug Fixes
 
-- Remove token from cli
-## [0.1.19] - 2026-07-15
+- Remove token from cli - ([#38](https://github.com/jdeinum/cargo-notch/issues/38)) - ([94b6ec9](https://github.com/jdeinum/cargo-notch/commit/94b6ec9d567a1c5ae5bc50074c8aedc156af1fef))
+## [0.1.19](https://github.com/jdeinum/cargo-notch/compare/47a827f..v0.1.19) - 2026-07-15
 
 ### 🚀 Features
 
-- Handle multiple notch calls on the same branch
+- Handle multiple notch calls on the same branch - ([#37](https://github.com/jdeinum/cargo-notch/issues/37)) - ([79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91))
 ## [0.1.18] - 2026-07-14
 
 ### 🐛 Bug Fixes
