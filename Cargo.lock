@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-notch"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "cargo_metadata",
