@@ -1,3 +1,8 @@
+## [1.0.2](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.1..1.0.2) - 2026-08-03
+
+### ⚙️ Miscellaneous Tasks
+
+- Bumping versions - ([57adafe](https://github.com/jdeinum/cargo-notch/commit/57adafea909c86630ea6a529ed8e504f72f13b8c))
 ## [1.0.1](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.0..cargo-notch-v1.0.1) - 2026-07-23
 
 ### 🐛 Bug Fixes
