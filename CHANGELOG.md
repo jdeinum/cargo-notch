@@ -1,3 +1,8 @@
+## [1.0.4](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.3..1.0.4) - 2026-08-04
+
+### 📚 Documentation
+
+- Put generating a git-cliff config in the install.md - ([6140263](https://github.com/jdeinum/cargo-notch/commit/6140263b372446226c23fecf011c0918fa0522d3))
 ## [1.0.3](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.2..1.0.3) - 2026-08-04
 
 ### 🚀 Features
