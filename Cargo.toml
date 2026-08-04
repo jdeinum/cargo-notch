@@ -1,6 +1,6 @@
 [package]
 name = "cargo-notch"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2024"
 description = "Version against a ground truth branch on a repo"
 license = "MIT"

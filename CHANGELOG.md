@@ -1,3 +1,9 @@
+## [1.0.5](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.4..1.0.5) - 2026-08-04
+
+### 🐛 Bug Fixes
+
+- *(ci)* Dist init again - ([ceeb749](https://github.com/jdeinum/cargo-notch/commit/ceeb749b15cbcf043133f5e892b4c4eefe7d7861))
+- Commit lock file - ([859f17e](https://github.com/jdeinum/cargo-notch/commit/859f17efeab7849c88b0acd07ecef0b9e33cce2d))
 ## [1.0.4](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.3..1.0.4) - 2026-08-04
 
 ### 📚 Documentation
