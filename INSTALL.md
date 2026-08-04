@@ -36,7 +36,25 @@ cargo install --git https://github.com/jdeinum/cargo-notch cargo-notch
 cargo notch init
 ```
 
-## Step 3 (optional): Create a PAT
+## Step 3: Create a cliff.toml
+
+`cargo notch pr` shells out to `git cliff` from the repository root without
+passing `--config`, so it always resolves a single `cliff.toml` at the root of
+the repo — there's no per-package config; the same file governs the changelog
+generated for every workspace member.
+
+Generate a starting point with:
+
+```bash
+git cliff --init
+```
+
+then customize it as needed — see the [git-cliff configuration
+docs](https://git-cliff.org/docs/configuration). The `[remote.github]` section
+(owner/repo) is used to build commit and comparison links in the generated
+changelog, so make sure it matches your repository.
+
+## Step 4 (optional): Create a PAT
 
 The tagging workflow falls back to the default `GITHUB_TOKEN` when no PAT is
 provided. However, tags pushed with `GITHUB_TOKEN` won't trigger other
@@ -49,6 +67,6 @@ PAT with `contents: write` on the repo:
 4. -> Actions
 5. Create a `RELEASE_PAT` secret, setting it to the PAT
 
-## Step 4: Use!
+## Step 5: Use!
 
 That's it, see the example in the [README](/README.md) on usage.
