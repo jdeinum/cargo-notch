@@ -7,6 +7,7 @@ use git2::{Commit, Cred, CredentialType, PushOptions, RemoteCallbacks, Repositor
 use octocrab::Octocrab;
 use octocrab::params::State;
 use secrecy::{ExposeSecret, SecretString};
+use std::path::Path;
 use tracing::debug;
 
 // Notch identity
@@ -126,6 +127,12 @@ pub fn changelog_range(release: &ReleaseConfig, last_notch_commit: Option<&Commi
 /// as the changelogs.
 pub fn commit_changes(repo: &Repository, updated: &[UpdatedCrate]) -> Result<()> {
     let mut index = repo.index().context("get index for repo")?;
+
+    // add the lock file, which is created when we generate our changelog
+    index
+        .add_path(Path::new("Cargo.lock"))
+        .context("add Cargo.lock to the index")?;
+
     for package in updated {
         // add the cargo.toml
         let cargo_path = package.package.join("Cargo.toml");
