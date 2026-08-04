@@ -1,3 +1,8 @@
+## [1.0.3](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.2..1.0.3) - 2026-08-04
+
+### 🚀 Features
+
+- Hide logging behind cli flag - ([93054bb](https://github.com/jdeinum/cargo-notch/commit/93054bb302f8d072d0902c36faba327390b0552b))
 ## [1.0.2](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.1..1.0.2) - 2026-08-03
 
 ### ⚙️ Miscellaneous Tasks

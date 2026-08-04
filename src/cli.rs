@@ -11,6 +11,9 @@ pub enum CargoCli {
 pub struct Cli {
     #[command(subcommand)]
     pub(crate) command: Commands,
+
+    #[arg(short, long)]
+    pub(crate) verbose: bool,
 }
 
 #[derive(Subcommand)]
