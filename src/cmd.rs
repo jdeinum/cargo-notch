@@ -1,6 +1,6 @@
 use crate::error::Result;
 use anyhow::{Context, Error};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// Runs a command to completion, returning the output / stderr
 pub fn run_command(cmd: &[&str]) -> Result<()> {
@@ -12,6 +12,8 @@ pub fn run_command(cmd: &[&str]) -> Result<()> {
 
     let res = Command::new(command)
         .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .context("spawn child to run command")?
         .wait()
