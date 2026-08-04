@@ -1,3 +1,8 @@
+## [1.0.6](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.5..1.0.6) - 2026-08-04
+
+### 🐛 Bug Fixes
+
+- Hide build output - ([46f78a5](https://github.com/jdeinum/cargo-notch/commit/46f78a5b3ae2b620d55ee32b05b143c0fdbfcb4d))
 ## [1.0.5](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.4..1.0.5) - 2026-08-04
 
 ### 🐛 Bug Fixes
