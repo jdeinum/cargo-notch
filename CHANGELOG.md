@@ -1,3 +1,12 @@
+## [1.0.7](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.6..1.0.7) - 2026-08-15
+
+### 🚜 Refactor
+
+- Bump deps - ([41a3a63](https://github.com/jdeinum/cargo-notch/commit/41a3a638d6a7e72f907f630abb2e928501957864))
+
+### ⚙️ Miscellaneous Tasks
+
+- No name for tag - ([5f97f28](https://github.com/jdeinum/cargo-notch/commit/5f97f286e93330fa2d177822d1273a052ebea0b1))
 ## [1.0.6](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.5..1.0.6) - 2026-08-04
 
 ### 🐛 Bug Fixes
