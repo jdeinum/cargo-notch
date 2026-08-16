@@ -76,6 +76,7 @@ impl ReleaseConfig {
             .replace("{version}", version)
     }
 
+    // x..HEAD gets you anything present in head that cannot be reached from x
     #[must_use]
     pub fn commit_range(&self) -> String {
         format!("{}/{}..HEAD", self.remote, self.default_branch)
