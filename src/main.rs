@@ -1,6 +1,7 @@
 use tracing::error;
 
 // a comment that doesn't actually do anything, just for the demo
+// a second comment for the demo
 
 pub fn main() {
     match cargo_notch::run() {
