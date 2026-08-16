@@ -1,3 +1,8 @@
+## [1.0.7](https://github.com/jdeinum/cargo-notch/compare/v1.0.7..1.0.7) - 2026-08-16
+
+### 🚀 Features
+
+- Demo - ([460d145](https://github.com/jdeinum/cargo-notch/commit/460d145556311142d5a39cb00b784d971fe6cef5))
 ## [1.0.6](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.5..1.0.6) - 2026-08-04
 
 ### 🐛 Bug Fixes
