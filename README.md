@@ -1,22 +1,9 @@
 # cargo-notch
 
-<div align="center"><p>
-    <a href="https://github.com/jdeinum/cargo-notch/tags">
-      <img alt="Current tag" src="https://img.shields.io/github/v/tag/jdeinum/cargo-notch?style=flat&logo=semanticrelease&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41&sort=semver" />
-    </a>
-    <a href="https://github.com/jdeinum/cargo-notch/pulse">
-      <img alt="Last commit" src="https://img.shields.io/github/last-commit/jdeinum/cargo-notch?style=flat&logo=git&color=8bd5ca&logoColor=D9E0EE&labelColor=302D41"/>
-    </a>
-    <a href="https://github.com/jdeinum/cargo-notch/actions/workflows/check.yaml">
-      <img alt="Check" src="https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/check.yaml?style=flat&label=Check&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
-    </a>
-    <a href="https://github.com/jdeinum/cargo-notch/actions/workflows/test.yaml">
-      <img alt="Test" src="https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/test.yaml?style=flat&label=Test&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
-    </a>
-    <a href="https://github.com/jdeinum/cargo-notch/actions/workflows/audit.yaml">
-      <img alt="Audit" src="https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/audit.yaml?style=flat&label=Audit&logo=githubactions&logoColor=D9E0EE&labelColor=302D41" />
-    </a>
-</p></div>
+[![Current tag](https://img.shields.io/github/v/tag/jdeinum/cargo-notch?style=for-the-badge&logo=semanticrelease&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41&sort=semver)](https://github.com/jdeinum/cargo-notch/tags)
+[![Check](https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/check.yaml?style=for-the-badge&label=Check&logo=githubactions&logoColor=D9E0EE&labelColor=302D41)](https://github.com/jdeinum/cargo-notch/actions/workflows/check.yaml)
+[![Test](https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/test.yaml?style=for-the-badge&label=Test&logo=githubactions&logoColor=D9E0EE&labelColor=302D41)](https://github.com/jdeinum/cargo-notch/actions/workflows/test.yaml)
+[![Audit](https://img.shields.io/github/actions/workflow/status/jdeinum/cargo-notch/audit.yaml?style=for-the-badge&label=Audit&logo=githubactions&logoColor=D9E0EE&labelColor=302D41)](https://github.com/jdeinum/cargo-notch/actions/workflows/audit.yaml)
 
 Notch is designed to be an ultra simple build tool for rust that versions
 against a ground source branch for your repository. The goal is to provide a
@@ -25,6 +12,17 @@ simple interface that allows you to version your new releases, generate a
 releases.
 
 If you have ideas, please create an issue!
+
+## Contents
+
+- [Who is Notch for?](#who-is-notch-for)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Example](#example)
+- [Inspiration](#inspiration)
+- [Development](#development)
+- [Configuration](#configuration)
+- [Changelog](#changelog)
 
 ## Who is Notch for?
 
@@ -39,45 +37,79 @@ I built Notch to help speed up my builds for Annona, a service based project
 where most workspace members end up as a docker image to be consumed by
 downstream consumers.
 
-## Roadmap
+## Installation
 
-- ✅ Initial prototype - [39d5eea](https://github.com/jdeinum/cargo-notch/commit/39d5eea1943a79ad88419e876f41917d15ed906f)
-- ✅ Github action that creates tags from merged PRs matching specs - [085c478](https://github.com/jdeinum/cargo-notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
-- ✅ Move hardcoded stuff to TOML config - [208a58a](https://github.com/jdeinum/cargo-notch/commit/208a58a948f68ab14903ce9f4d8561f030ea8d6c)
-- ✅ Working CLI - [085c478](https://github.com/jdeinum/cargo-notch/commit/085c478e366bc3ed7b2dad0fdcf818d154d4b038)
-- ✅ CI/CD stuff - [8de9869](https://github.com/jdeinum/cargo-notch/commit/8de98691e121534b7d5bb5dc80cbfa4d8762e1fb)
-- ✅ Working TUI - [79ce715](https://github.com/jdeinum/cargo-notch/commit/79ce71566b958c8f0184e3f0581f2413885845c7)
-- ✅ Contention Handling - [79963b1](https://github.com/jdeinum/cargo-notch/commit/79963b1d0492e0f53c974a4094851947fc391a91)
-- ✅ Test Harness - [9948b74](https://github.com/jdeinum/cargo-notch/commit/9948b74da8a3f20b0aed4f69fc64aaa648ec5681)
-- ✅ Auto versioning option (`cargo notch pr --auto`, since v0.1.24) - [dbf9b6a](https://github.com/jdeinum/cargo-notch/commit/dbf9b6afcfa724258a1e1d3ea278b80c3689805b)
-- ✅ Release v1.0.0 - [ae03a87](https://github.com/jdeinum/cargo-notch/commit/ae03a87ee4814d70fb31da21f87c7d491b51e93c)
+See [INSTALL.md](./INSTALL.md)
+
+## Usage
+
+Every command is invoked as `cargo notch <command>`. `-v`/`--verbose` is a
+flag on `notch` itself rather than on the individual commands, so it goes
+*before* the command name (`cargo notch --verbose pr`, not
+`cargo notch pr --verbose`) and turns on debug logging for whichever command
+runs.
+
+```bash
+# list all commands and global flags
+cargo notch --help
+
+# list the flags for one command
+cargo notch pr --help
+```
+
+### `cargo notch init`
+
+Scaffolds a repo for notch: writes a default `notch.toml` and a
+`.github/workflows/notch_tag.yaml` workflow that runs `cargo notch tag` on
+every push to your default branch. Never overwrites either file if it's
+already there, so it's safe to re-run.
+
+### `cargo notch commit`
+
+Bumps the version and updates the changelog for every package with attributed
+commits, then commits the result locally — no push, no PR. If the branch
+already has a prior notch commit, it's dropped first so re-running always
+starts from a clean slate.
+
+By default this opens an interactive TUI, preselecting each package's
+suggested bump so you can confirm or override it. Pass `--auto` to skip the
+TUI entirely and derive every bump from conventional commits instead (see
+`[bumps]` in [CONFIGURATION.md](./CONFIGURATION.md)).
+
+### `cargo notch pr`
+
+Does everything `cargo notch commit` does, then pushes the branch and opens a
+release PR on GitHub. Requires a GitHub token — see
+[CONFIGURATION.md](./CONFIGURATION.md) for how to set
+`NOTCH__REPO__TOKEN`. Also accepts `--auto`.
+
+### `cargo notch tag`
+
+Takes `--old <commit>` and `--new <commit>`, diffs workspace member versions
+between the two, and prints (one per line) the tags that should be created
+for whichever packages changed. This is what the generated GitHub Action runs
+after a release PR merges — you won't normally call it by hand.
 
 ## Example
 
 ```bash
-# create a feature branch
 git checkout -b feature/add_two
 
-# do some stuff...
+# ...make your changes...
 # nvim src/main.rs
 
-# commit
+# commit your changes
 git commit -m "feat: added the add_two function"
 
 # bump versions, update changelogs, and open a release PR for changed crates
 # (the token is read from config/env, not passed on the command line — see CONFIGURATION.md)
 NOTCH__REPO__TOKEN=<github-token> cargo notch pr
 
-# or, since v0.1.24, skip the TUI and derive bumps from conventional commits
-# (see the [bumps] section in CONFIGURATION.md)
-NOTCH__REPO__TOKEN=<github-token> cargo notch pr --auto
-
-# merge PR on github or from cli
+# merge the PR on github or from the cli
 gh pr merge <pr_number>
 
-# notch gha notices the PR, sees version differences, creates tags
-
-# build happens as normal
+# the generated GitHub Action notices the merge, diffs versions, and pushes
+# tags for whatever changed — your build triggers off those tags as usual
 ```
 
 ## Inspiration
@@ -120,10 +152,6 @@ git config core.hooksPath .githooks
 
 The pre-push hook runs `cargo fmt --check`, `cargo clippy`, and `cargo deny
 check` before every push.
-
-## Installation
-
-See [INSTALL.md](./INSTALL.md)
 
 ## Configuration
 
