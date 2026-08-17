@@ -1,3 +1,8 @@
+## [1.2.0](https://github.com/jdeinum/cargo-notch/compare/v1.1.0..1.2.0) - 2026-08-17
+
+### 🚀 Features
+
+- Better PR title / squash commit message - ([3e75b3f](https://github.com/jdeinum/cargo-notch/commit/3e75b3ff6db4747d32480d90b359fefc07f16151))
 ## [1.1.0](https://github.com/jdeinum/cargo-notch/compare/v1.0.7..1.1.0) - 2026-08-17
 
 ### 🚀 Features
