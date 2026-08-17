@@ -1,11 +1,11 @@
 pub(crate) mod cli;
-pub(crate) mod cmd;
+pub(crate) mod commit;
 pub(crate) mod config;
 pub(crate) mod error;
 pub(crate) mod init;
-pub(crate) mod package;
 pub(crate) mod pr;
 pub(crate) mod tag;
+pub(crate) mod utils;
 
 use crate::{
     cli::{CargoCli, Commands},
@@ -37,5 +37,6 @@ pub fn run() -> Result<()> {
         Commands::Pr { auto } => pr::run(auto).context("run pr"),
         Commands::Tag { old, new } => tag::run(&old, &new).context("run tag"),
         Commands::Init {} => init::run().context("init notch"),
+        Commands::Commit { auto } => commit::run(auto).context("run commit"),
     }
 }

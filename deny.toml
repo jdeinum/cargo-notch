@@ -40,4 +40,5 @@ skip = [
     { crate = "hashbrown" },
     { crate = "syn" },
     { crate = "openssl-probe" },
+    { crate = "windows-sys" },
 ]

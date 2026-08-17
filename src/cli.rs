@@ -38,4 +38,10 @@ pub enum Commands {
     },
     /// Init creates the github action and config file according to the defaults for our configs
     Init {},
+
+    /// Creates a notch commit and cleans up any previous ones
+    Commit {
+        #[arg(long)]
+        auto: bool,
+    },
 }

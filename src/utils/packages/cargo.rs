@@ -1,85 +1,74 @@
 use crate::error::Result;
+use crate::utils::package::Package;
+use crate::utils::packages::traits::Packages;
 use anyhow::Context;
-use cargo_metadata::{MetadataCommand, semver::Version};
+use cargo_metadata::MetadataCommand;
+use std::collections::HashSet;
 use std::path::Path;
 use tracing::debug;
 
-// some docs
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Package {
-    /// Workspace-relative directory containing the package's `Cargo.toml`.
-    pub path: String,
-    /// The package's actual `[package] name` from its `Cargo.toml`.
-    pub name: String,
-    pub version: Version,
+pub struct CargoPackager {
+    dir: String,
 }
 
-impl Package {
-    /// Joins this package's path with a filename to get a path relative to
-    /// the repo root. A root-level package is normalized to "." (see
-    /// `get_cleaned_members`), so naive concatenation would produce a
-    /// leading "./" that libgit2 rejects (e.g. from `status_file` or
-    /// `Index::add_path`).
-    pub fn join(&self, file: &str) -> String {
-        if self.path == "." {
-            file.to_string()
-        } else {
-            format!("{}/{file}", self.path)
-        }
+impl CargoPackager {
+    pub const fn new(dir: String) -> Self {
+        Self { dir }
     }
 }
 
-// get the list of packages in the workspace rooted at `dir`
-pub fn get_cleaned_members(dir: &Path) -> Result<Vec<Package>> {
-    let metadata = MetadataCommand::new()
-        .current_dir(dir)
-        .exec()
-        .context("run cargo metadata")?;
-    let members = metadata.workspace_members;
-    let packages = metadata.packages;
-    debug!("Members: {members:?}");
+impl Packages for CargoPackager {
+    fn get(&self) -> Result<HashSet<Package>> {
+        let dir = Path::new(&self.dir);
+        let metadata = MetadataCommand::new()
+            .current_dir(dir)
+            .exec()
+            .context("run cargo metadata")?;
+        let members = metadata.workspace_members;
+        let packages = metadata.packages;
+        debug!("Members: {members:?}");
 
-    // Strip against the workspace root cargo itself reports, not the caller's
-    // `dir`: cargo always emits member ids as absolute paths, so a relative or
-    // non-canonical `dir` (like the "." run() passes) would never prefix-match
-    // and every member would silently keep its absolute path.
-    let root = metadata.workspace_root.as_str();
+        // Strip against the workspace root cargo itself reports, not the caller's
+        // `dir`: cargo always emits member ids as absolute paths, so a relative or
+        // non-canonical `dir` (like the "." run() passes) would never prefix-match
+        // and every member would silently keep its absolute path.
+        let root = metadata.workspace_root.as_str();
 
-    // clean up the members
-    let cleaned_members: Vec<Package> = members
-        .iter()
-        .map(|s| {
-            let raw_path = s
-                .repr
-                .replace("path+file://", "")
-                .split('#')
-                .next()
-                .unwrap()
-                .to_string();
+        // clean up the members
+        let cleaned_members: HashSet<Package> = members
+            .iter()
+            .map(|s| {
+                let raw_path = s
+                    .repr
+                    .replace("path+file://", "")
+                    .split('#')
+                    .next()
+                    .unwrap()
+                    .to_string();
 
-            // strip the workspace root prefix to get a repo-relative path;
-            // a member whose manifest sits at the root itself (e.g. a
-            // single, non-workspace crate) has no trailing slash to strip
-            // against, so it's normalized to "." rather than left as an
-            // absolute path (which would never prefix-match the relative
-            // paths in a git diff)
-            let relative = raw_path
-                .strip_prefix(root)
-                .map_or(raw_path.as_str(), |rest| rest.trim_start_matches('/'));
-            let path = if relative.is_empty() { "." } else { relative }.to_string();
+                // strip the workspace root prefix to get a repo-relative path;
+                // a member whose manifest sits at the root itself (e.g. a
+                // single, non-workspace crate) has no trailing slash to strip
+                // against, so it's normalized to "." rather than left as an
+                // absolute path (which would never prefix-match the relative
+                // paths in a git diff)
+                let relative = raw_path
+                    .strip_prefix(root)
+                    .map_or(raw_path.as_str(), |rest| rest.trim_start_matches('/'));
+                let path = if relative.is_empty() { "." } else { relative }.to_string();
 
-            let package = packages.iter().find(|p| p.id == *s).unwrap();
-            Package {
-                path,
-                name: package.name.to_string(),
-                version: package.version.clone(),
-            }
-        })
-        .collect();
+                let package = packages.iter().find(|p| p.id == *s).unwrap();
+                Package {
+                    path,
+                    name: package.name.to_string(),
+                    version: package.version.clone(),
+                }
+            })
+            .collect();
 
-    debug!("cleaned members: {cleaned_members:?}");
-    Ok(cleaned_members)
+        debug!("cleaned members: {cleaned_members:?}");
+        Ok(cleaned_members)
+    }
 }
 
 #[cfg(test)]
@@ -104,9 +93,9 @@ mod tests {
         .unwrap();
         fs::write(dir.join("src/lib.rs"), "").unwrap();
 
-        let members = get_cleaned_members(&dir);
+        let members = CargoPackager::new(dir.to_str().unwrap().to_string()).get();
         fs::remove_dir_all(&dir).unwrap();
-        let members = members.unwrap();
+        let members: Vec<Package> = members.unwrap().into_iter().collect();
 
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].path, ".");
@@ -131,9 +120,10 @@ mod tests {
         .unwrap();
         fs::write(dir.join("src/lib.rs"), "").unwrap();
 
-        let members = get_cleaned_members(&dir.join("."));
+        let dot = dir.join(".");
+        let members = CargoPackager::new(dot.to_str().unwrap().to_string()).get();
         fs::remove_dir_all(&dir).unwrap();
-        let members = members.unwrap();
+        let members: Vec<Package> = members.unwrap().into_iter().collect();
 
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].path, ".");
@@ -159,9 +149,9 @@ mod tests {
         .unwrap();
         fs::write(dir.join("crate-a/src/lib.rs"), "").unwrap();
 
-        let members = get_cleaned_members(&dir);
+        let members = CargoPackager::new(dir.to_str().unwrap().to_string()).get();
         fs::remove_dir_all(&dir).unwrap();
-        let members = members.unwrap();
+        let members: Vec<Package> = members.unwrap().into_iter().collect();
 
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].path, "crate-a");

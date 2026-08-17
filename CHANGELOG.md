@@ -1,3 +1,8 @@
+## [1.1.0](https://github.com/jdeinum/cargo-notch/compare/v1.0.7..1.1.0) - 2026-08-17
+
+### 🚀 Features
+
+- Use FSM for commit handling + notch commit - ([8020cbc](https://github.com/jdeinum/cargo-notch/commit/8020cbca3b438b827e1312d8c5e88a5f6e479607))
 ## [1.0.7](https://github.com/jdeinum/cargo-notch/compare/cargo-notch-v1.0.6..1.0.7) - 2026-08-15
 
 ### 🚜 Refactor
