@@ -1,7 +1,7 @@
 use crate::config::{self, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::utils::package::Package;
-use crate::utils::packages::{CargoPackager, Packages};
+use crate::utils::packages::{CargoEcosystem, Ecosystem};
 use anyhow::Context;
 use cargo_metadata::semver::Version;
 use git2::{BranchType, Repository, WorktreePruneOptions, build::CheckoutBuilder};
@@ -71,10 +71,9 @@ fn members_at_commit(repo: &Repository, commit: &str) -> Result<Vec<Package>> {
             .checkout_head(Some(CheckoutBuilder::new().force()))
             .context("checkout commit in worktree")?;
 
-        let members = CargoPackager::new(path.to_string_lossy().into_owned())
-            .get()
-            .context("get cleaned members from worktree")?;
-        Ok(members.into_iter().collect())
+        CargoEcosystem
+            .packages(&path)
+            .context("get cleaned members from worktree")
     })();
 
     // always clean up the worktree and its scratch branch, even if the above failed
@@ -144,11 +143,12 @@ mod tests {
     use std::assert_matches;
 
     fn member(path: &str, name: &str, version: &str) -> Package {
-        Package {
-            path: path.to_string(),
-            name: name.to_string(),
-            version: Version::parse(version).unwrap(),
-        }
+        Package::new(
+            path.to_string(),
+            name.to_string(),
+            Version::parse(version).unwrap(),
+            std::path::PathBuf::from(format!("{path}/Cargo.toml")),
+        )
     }
 
     #[test]

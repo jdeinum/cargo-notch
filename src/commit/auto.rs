@@ -146,11 +146,12 @@ mod tests {
     }
 
     fn package(version: &str) -> Package {
-        Package {
-            path: "a".to_string(),
-            name: "a".to_string(),
-            version: Version::parse(version).unwrap(),
-        }
+        Package::new(
+            "a".to_string(),
+            "a".to_string(),
+            Version::parse(version).unwrap(),
+            std::path::PathBuf::from("a/Cargo.toml"),
+        )
     }
 
     fn fsm_with(commits: &[CommitInfo], config: &BumpsConfig) -> NotchFsm {

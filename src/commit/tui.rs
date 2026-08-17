@@ -327,11 +327,12 @@ mod tests {
     fn package(name: &str, version: &str) -> PackageItem {
         let version = Version::parse(version).unwrap();
         PackageItem::new(
-            Package {
-                path: name.to_string(),
-                name: name.to_string(),
+            Package::new(
+                name.to_string(),
+                name.to_string(),
                 version,
-            },
+                std::path::PathBuf::from(format!("{name}/Cargo.toml")),
+            ),
             Vec::new(),
             None,
         )
@@ -448,11 +449,12 @@ mod tests {
     fn bump_options_are_computed_from_the_current_version() {
         let current = Version::parse("1.2.5").unwrap();
         let item = PackageItem::new(
-            Package {
-                path: "a".to_string(),
-                name: "a".to_string(),
-                version: current,
-            },
+            Package::new(
+                "a".to_string(),
+                "a".to_string(),
+                current,
+                std::path::PathBuf::from("a/Cargo.toml"),
+            ),
             Vec::new(),
             None,
         );
@@ -476,11 +478,12 @@ mod tests {
         // mirrors what `run` does with `NotchFsm::suggested_bump` — the state machine's
         // suggestion is preselected, letting the user confirm it as-is or override it.
         let item = PackageItem::new(
-            Package {
-                path: "a".to_string(),
-                name: "a".to_string(),
-                version: Version::parse("1.2.5").unwrap(),
-            },
+            Package::new(
+                "a".to_string(),
+                "a".to_string(),
+                Version::parse("1.2.5").unwrap(),
+                std::path::PathBuf::from("a/Cargo.toml"),
+            ),
             Vec::new(),
             Some(Bump::Minor),
         );
@@ -496,11 +499,12 @@ mod tests {
     #[test]
     fn preselection_lets_confirm_succeed_without_picking_a_bump_manually() {
         let mut app = App::new(vec![PackageItem::new(
-            Package {
-                path: "a".to_string(),
-                name: "a".to_string(),
-                version: Version::parse("1.2.5").unwrap(),
-            },
+            Package::new(
+                "a".to_string(),
+                "a".to_string(),
+                Version::parse("1.2.5").unwrap(),
+                std::path::PathBuf::from("a/Cargo.toml"),
+            ),
             Vec::new(),
             Some(Bump::Patch),
         )]);

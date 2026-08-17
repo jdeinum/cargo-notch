@@ -68,6 +68,50 @@ chore a patch bump except release chores, which are skipped.
   whose every attributed commit is skipped is dropped from the release
   entirely — no version bump, no changelog entry, no PR section.
 
+## `[tracking]`
+
+Narrows which files count as a change to a package. A package is released when
+a file it tracks differs from the default branch — by default that's everything
+in its own directory, minus any package nested inside it (a workspace root
+that's also a package doesn't get bumped by its members' changes).
+
+- `exclude` (default: `["CHANGELOG.md"]`) — paths that don't count as a change,
+  applied to **every** package. notch writes each `CHANGELOG.md` itself during a
+  bump, so leaving it tracked means hand-editing a changelog cuts a release.
+- `include` (default: `[]`) — paths that *do* count, used to carve a
+  subdirectory back out of a broader `exclude`. This is not an allowlist: a
+  package already tracks its own directory, so listing paths here narrows
+  nothing on its own.
+- `[tracking.packages.<name>]` — the same two keys, for one package, keyed by
+  the name its `Cargo.toml` declares (not its directory). These **add to** the
+  global lists rather than replacing them.
+
+Every pattern is a path **relative to the package's own directory**, not to the
+repo root. That's what lets a single `exclude = ["benches"]` mean "each
+package's own `benches` directory" without any glob syntax. Matching is by
+whole path components, so `benches` excludes `benches/throughput.rs` but not
+`benches-old/`, and a pattern is a prefix rather than a pattern language —
+`src/generated` works, `**/*.snap` does not.
+
+Where the two lists overlap, **the more specific path wins**, whichever list it
+came from. `exclude = ["tests"]` with `include = ["tests/compat"]` means "no
+releases for test changes, except the compatibility suite", and the two can
+alternate to any depth. Order within the file never matters — only how specific
+each path is. A path named in both lists at once is excluded.
+
+A pattern that resolves to the package's own directory (`""`, `"."`, `"/"`) is
+ignored with a warning: as an `exclude` it would stop that package ever being
+released, and as an `include` it does nothing.
+
+```toml
+[tracking]
+exclude = ["CHANGELOG.md", "benches"]
+
+[tracking.packages.user_service]
+exclude = ["fixtures", "docs"]
+include = ["docs/schema"]  # schema changes are a release, prose isn't
+```
+
 ## Environment variable overrides
 
 Every field can also be set (or overridden) with a `NOTCH__`-prefixed
@@ -94,4 +138,8 @@ major = []
 minor = ["feat"]
 patch = ["fix", "chore", "refactor", "docs"]
 skip = []
+
+[tracking]
+exclude = ["CHANGELOG.md"]
+include = []
 ```

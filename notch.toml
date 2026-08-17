@@ -11,3 +11,7 @@ major = []
 minor = ["feat"]
 patch = ["fix", "chore", "refactor", "docs"]
 skip = []
+
+[tracking]
+exclude = ["CHANGELOG.md"]
+include = []

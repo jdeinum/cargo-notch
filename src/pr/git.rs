@@ -165,11 +165,12 @@ mod tests {
 
     fn updated_crate(name: &str, from: (u64, u64, u64), to: Version) -> UpdatedCrate {
         UpdatedCrate {
-            package: Package {
-                path: name.to_string(),
-                name: name.to_string(),
-                version: Version::new(from.0, from.1, from.2),
-            },
+            package: Package::new(
+                name.to_string(),
+                name.to_string(),
+                Version::new(from.0, from.1, from.2),
+                std::path::PathBuf::from(format!("{name}/Cargo.toml")),
+            ),
             new_version: to,
             commits: vec![],
         }

@@ -8,7 +8,7 @@ use secrecy::ExposeSecret;
 
 /// Runs `notch pr`: does everything `notch commit` does (see `commit::commit`), then pushes the
 /// branch and opens a release PR for it.
-pub fn run(auto: bool) -> Result<()> {
+pub fn run(auto: bool, dry_run: bool) -> Result<()> {
     // load the config
     let config = config::load().context("load notch.toml")?;
 
@@ -19,6 +19,20 @@ pub fn run(auto: bool) -> Result<()> {
     let Some(token) = config.repo.token.clone() else {
         return Err(Error::msg("No token provided"));
     };
+
+    // a dry run stops at the plan: no bump, no commit, and so nothing to push or open a PR for.
+    // The token check above still applies — a real run needs it, so failing fast on a missing one
+    // is more useful than reporting a plan that couldn't have been carried out anyway.
+    if dry_run {
+        if let Some(plan) = commit::plan(&config, auto, true).context("plan the release")? {
+            commit::describe(&plan);
+            println!(
+                "would then push the current branch to {} and open a release PR against {}",
+                config.release.remote, config.release.default_branch
+            );
+        }
+        return Ok(());
+    }
 
     let Some((repo, res)) = commit::commit(&config, auto).context("run commit")? else {
         return Ok(());
