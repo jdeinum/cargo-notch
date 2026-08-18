@@ -1,3 +1,8 @@
+## [1.2.3](https://github.com/jdeinum/cargo-notch/compare/v1.2.2..1.2.3) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- Non destructive plan - ([99d67d2](https://github.com/jdeinum/cargo-notch/commit/99d67d221d589e9b70a526435e42f6f8a012202c))
 ## [1.2.2](https://github.com/jdeinum/cargo-notch/compare/v1.2.1..1.2.2) - 2026-08-18
 
 ### 🚜 Refactor
