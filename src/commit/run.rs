@@ -5,7 +5,9 @@ use crate::config::{self, Config};
 use crate::error::{Error, Result};
 use crate::utils::command::run_command;
 use crate::utils::commits::{CommitInfo, PackageCommits, WorktreeCommitAssigner, fetch_remote};
-use crate::utils::git::{commit_changes, drop_prior_notch_commit, prior_notch_state};
+use crate::utils::git::{
+    commit_changes, drop_prior_notch_commit, packages_without_prior_notch_commit,
+};
 use crate::utils::lock::acquire_repo_lock;
 use crate::utils::package::Package;
 use crate::utils::packages::{CargoEcosystem, Ecosystem, narrow_to_tracked};
@@ -17,16 +19,13 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 
 /// Everything a release run decided before it wrote anything: which packages to bump, to what,
-/// and off which commits. Computing this is entirely read-only apart from the prior-notch-commit
-/// drop, which is why `--dry-run` can stop here and print it — see `describe`.
+/// and off which commits. Computing it is entirely read-only — no file written, no ref moved —
+/// which is what makes `--dry-run` nothing more than "stop here and print it", see `describe`.
 pub struct ReleasePlan {
     pub repo: Repository,
     pub updates: Vec<UpdatedCrate>,
     /// The commit range git-cliff should scan to build the changelog.
     pub changelog_range: String,
-    /// Short id of a prior notch commit this run deliberately left on the branch. Only ever set
-    /// for a dry run — a real run drops it, so there's nothing left to report.
-    pub prior_notch_commit: Option<String>,
 }
 
 /// `notch commit`: bumps each changed package's version, updates its changelog, and commits the
@@ -36,34 +35,26 @@ pub struct ReleasePlan {
 pub fn run(auto: bool, dry_run: bool) -> Result<()> {
     let config = config::load().context("load notch.toml")?;
 
+    let Some(plan) = plan(&config, auto).context("plan the release")? else {
+        return Ok(());
+    };
+
+    // `--dry-run` is exactly "don't run the half that writes". `plan` left the repo as it found
+    // it, so there's nothing to undo and nothing to caveat in what `describe` prints.
     if dry_run {
-        if let Some(plan) = plan(&config, auto, true).context("plan the release")? {
-            describe(&plan);
-        }
+        describe(&plan);
         return Ok(());
     }
 
-    commit(&config, auto)?;
+    apply(&config, plan).context("apply the release")?;
     Ok(())
 }
 
-/// Bumps each changed package's version, updates its changelog, and commits the result locally —
-/// no push, no PR. Shared by `notch commit` (which stops here, see `run`) and `notch pr` (which
-/// pushes and opens a PR on top, see `pr::run`). Just `plan` then `apply`; the split exists so
-/// `--dry-run` can run the first half, which decides everything, without the second, which is
-/// the half that writes.
-pub fn commit(config: &Config, auto: bool) -> Result<Option<(Repository, Vec<UpdatedCrate>)>> {
-    let Some(plan) = plan(config, auto, false)? else {
-        return Ok(None);
-    };
-    apply(plan).map(Some)
-}
-
-/// Decides what to release, without writing any of it:
+/// Decides what to release, without writing any of it or moving any ref:
 ///
-/// 1. drops the branch's prior notch commit, if one exists (see `utils::git::drop_prior_notch_commit`),
-///    so every step below sees a clean slate rather than having to route around a stale one — or,
-///    under `dry_run`, recovers the same baseline from that commit's trailer instead of dropping it
+/// 1. reads each package's baseline version — what it would be without the branch's own prior
+///    notch bump, which is worked out in a throwaway worktree so this branch is never touched
+///    (see `utils::git::packages_without_prior_notch_commit`)
 /// 2. finds the packages in the project and, per package, the commits attributed to it
 /// 3. builds one state machine per changed package, fed with its attributed commits — its
 ///    suggested bump (see `NotchFsm::dump`) is what auto mode accepts and what the tui preselects
@@ -72,49 +63,36 @@ pub fn commit(config: &Config, auto: bool) -> Result<Option<(Repository, Vec<Upd
 ///
 /// Returns `None` if there's nothing to release: nothing changed, every commit matched the skip
 /// list, or the user cancelled the tui.
-pub fn plan(config: &Config, auto: bool, dry_run: bool) -> Result<Option<ReleasePlan>> {
+pub fn plan(config: &Config, auto: bool) -> Result<Option<ReleasePlan>> {
     let repo: Repository = Repository::init(".").context("open repo")?;
 
-    // serialize against any other notch process touching this repo before we read or mutate
-    // any of its git state — see `acquire_repo_lock`. A dry run takes the lock too: it reads the
-    // same state, and a concurrent real run moving it underneath would make the plan a lie.
+    // serialize against any other notch process touching this repo before we read any of its git
+    // state — see `acquire_repo_lock`. Read-only work takes the lock too: a concurrent real run
+    // moving that state underneath us would make the plan a lie.
     acquire_repo_lock(&repo).context("acquire notch repo lock")?;
 
-    // A prior notch commit's bump is sitting in the working tree, so package discovery below
-    // would read it as the package's "current version" and bump on top of it. A real run fixes
-    // that by dropping the commit before discovery — but that rewrites history, which a dry run
-    // must not do. The same pre-bump versions are already recorded in the commit's own
-    // `Notch-Bump` trailer, so a dry run recovers the baseline from there and leaves the branch
-    // exactly as it found it.
-    let prior = if dry_run {
-        // the tracking ref the commit range is resolved against has to be current either way
-        fetch_remote(&repo, config).context("fetch remote")?;
-        prior_notch_state(&repo, config).context("read prior notch commit")?
-    } else {
-        drop_prior_notch_commit(&repo, config).context("drop prior notch commit")?;
-        None
-    };
+    // the tracking ref every commit range below resolves against has to be current — see
+    // `fetch_remote`
+    fetch_remote(&repo, config).context("fetch remote")?;
 
     // everything below runs against the repo root, which is where notch is invoked from
     let root = Path::new(".");
     let ecosystem = CargoEcosystem;
 
-    // get our packages — after the drop above, so this sees each package's true, un-bumped
-    // version rather than whatever a prior (now-dropped) notch commit had left on disk
-    let mut packages = ecosystem.packages(root).context("get packages")?;
+    // Each package's baseline version: what's on disk, unless a prior notch commit already bumped
+    // it, in which case what it would be without that commit. Working that out needs the commit
+    // rebased away, which happens in a throwaway worktree — planning decides, `apply` rewrites.
+    let mut packages = match packages_without_prior_notch_commit(&repo, config, &ecosystem)
+        .context("read baseline packages")?
+    {
+        Some(packages) => packages,
+        None => ecosystem.packages(root).context("get packages")?,
+    };
 
     // The ecosystem has already subtracted any nested packages; this layers the user's own
     // `[tracking]` excludes on top, so both are in place before anything asks a package whether a
     // file belongs to it.
     narrow_to_tracked(&mut packages, &config.tracking);
-
-    if let Some(prior) = &prior {
-        for package in &mut packages {
-            if let Some(baseline) = prior.baseline.get(&package.name) {
-                package.version = baseline.clone();
-            }
-        }
-    }
 
     // get commits for each package
     let mut worktree_assigner = WorktreeCommitAssigner::new(repo);
@@ -161,19 +139,24 @@ pub fn plan(config: &Config, auto: bool, dry_run: bool) -> Result<Option<Release
         repo,
         updates,
         changelog_range,
-        prior_notch_commit: prior.map(|p| p.commit),
     }))
 }
 
 /// Writes the plan out: every package's new version, its changelog entry, a refreshed lockfile,
-/// and one commit holding the lot.
-pub fn apply(plan: ReleasePlan) -> Result<(Repository, Vec<UpdatedCrate>)> {
+/// and one commit holding the lot. Everything in this function mutates something; everything that
+/// merely decides happens in `plan`.
+pub fn apply(config: &Config, plan: ReleasePlan) -> Result<(Repository, Vec<UpdatedCrate>)> {
     let ReleasePlan {
         repo,
         updates,
         changelog_range,
-        ..
     } = plan;
+
+    // Now, and only now, the branch gets rewritten. `plan` deliberately left the prior notch
+    // commit alone; dropping it here is what keeps the branch at exactly one notch commit, and it
+    // also restores the manifests to the versions `updates` was computed against — which is what
+    // `set_versions` checks before it writes anything.
+    drop_prior_notch_commit(&repo, config).context("drop prior notch commit")?;
 
     let root = Path::new(".");
     let ecosystem = CargoEcosystem;
@@ -226,14 +209,6 @@ pub fn describe(plan: &ReleasePlan) {
             update.package.join("CHANGELOG.md")
         );
         println!();
-    }
-
-    if let Some(commit) = &plan.prior_notch_commit {
-        println!(
-            "a prior notch commit ({commit}) is still on this branch. A real run drops it first; \
-             this one left it alone and took each package's pre-bump version from its \
-             `Notch-Bump` trailer, so the versions above are what a real run would produce."
-        );
     }
 }
 
