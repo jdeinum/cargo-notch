@@ -1,15 +1,18 @@
 use crate::commit::UpdatedCrate;
-use crate::config::Config;
+use crate::config::{Config, ReleaseConfig};
 use crate::error::{Error, Result};
-use crate::utils::command::run_command;
+use crate::utils::command::run_command_in;
 use crate::utils::commits::{fetch_remote, get_commits};
+use crate::utils::package::Package;
+use crate::utils::packages::Ecosystem;
 use anyhow::Context;
-use cargo_metadata::semver::Version;
-use git2::{Commit, Cred, CredentialType, PushOptions, RemoteCallbacks, Repository, Signature};
+use git2::{
+    BranchType, Commit, Cred, CredentialType, PushOptions, RemoteCallbacks, Repository, Signature,
+    Worktree, WorktreePruneOptions, build::CheckoutBuilder,
+};
 use secrecy::{ExposeSecret, SecretString};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use tracing::debug;
+use std::path::{Path, PathBuf};
+use tracing::{debug, warn};
 
 // Notch identity
 const NOTCH_COMMIT_MESSAGE: &str = "chore(notch): changelog + version bump";
@@ -91,84 +94,145 @@ pub fn find_last_notch_commit<'a>(commits: &[Commit<'a>]) -> Option<Commit<'a>> 
     commits.iter().rev().find(|c| is_notch_commit(c)).cloned()
 }
 
-/// What the notch commits already on this branch recorded, for a caller that deliberately leaves
-/// them in place rather than dropping them (see `prior_notch_state`).
-pub struct PriorNotchState {
-    /// Short id of the most recent notch commit still on the branch.
-    pub commit: String,
-    /// Each package's version *before* any notch commit bumped it, keyed by package name. When
-    /// several notch commits have stacked up, the oldest recorded `old` wins — that's the version
-    /// the branch actually started from, and bumping anything else double-counts.
-    pub baseline: HashMap<String, Version>,
-}
-
-/// Reads the branch's prior notch bump back out of history without touching it, returning `None`
-/// if there isn't one. This is what lets a dry run stay read-only: `drop_prior_notch_commit`
-/// exists so package discovery sees un-bumped versions, but it rewrites history to get there.
-/// The same baseline is already recorded in the commit's own `Notch-Bump` trailer, so a caller
-/// that must not mutate can recover it from there instead.
-pub fn prior_notch_state(repo: &Repository, config: &Config) -> Result<Option<PriorNotchState>> {
-    let commits = get_commits(repo, &config.release).context("get commits")?;
-
-    let mut baseline: HashMap<String, Version> = HashMap::new();
-    let mut latest: Option<String> = None;
-
-    // oldest-first, so the first `old` recorded for a package is the one the branch started from
-    for commit in commits.iter().filter(|c| is_notch_commit(c)) {
-        latest = Some(commit.id().to_string()[..7].to_string());
-        let Ok(message) = commit.message() else {
-            continue;
-        };
-        for (name, version) in parse_bump_trailer(message) {
-            baseline.entry(name).or_insert(version);
+/// Reads each package as it would be if this branch's prior notch commit had never happened,
+/// leaving the caller's branch exactly as it found it.
+///
+/// The problem: package discovery reads versions off disk, so a prior notch bump sitting in the
+/// working tree becomes the package's "current" version and the next run bumps on top of it —
+/// stacking one bump per invocation instead of producing one net bump against the default branch.
+/// [`drop_prior_notch_commit`] fixes that by rebasing the commit away, but rewriting history is
+/// not something *deciding* what to release should be doing.
+///
+/// So the rebase happens in a throwaway worktree instead. What comes back is "this branch without
+/// notch's own bump", which is the baseline that actually matters: every other commit survives, so
+/// a version someone set by hand still counts. Reading the merge base instead would be simpler and
+/// would silently discard it.
+///
+/// Returns `None` when the branch has no notch commit — then the working tree already *is* the
+/// baseline, and no worktree is created.
+pub fn packages_without_prior_notch_commit(
+    repo: &Repository,
+    config: &Config,
+    ecosystem: &dyn Ecosystem,
+) -> Result<Option<Vec<Package>>> {
+    {
+        let commits = get_commits(repo, &config.release).context("get commits")?;
+        if !commits.iter().any(|c| is_notch_commit(c)) {
+            return Ok(None);
         }
     }
 
-    Ok(latest.map(|commit| PriorNotchState { commit, baseline }))
+    let head = repo
+        .head()
+        .context("get head")?
+        .peel_to_commit()
+        .context("peel head to commit")?
+        .id();
+
+    // keyed by head so concurrent runs, or one abandoned by a crash, don't collide on the name
+    let name = format!("notch-baseline-{head}");
+    let path = std::env::temp_dir().join(&name);
+    let worktree = repo
+        .worktree(&name, &path, None)
+        .context("create baseline worktree")?;
+
+    let packages = (|| -> Result<Vec<Package>> {
+        let worktree_repo =
+            Repository::open_from_worktree(&worktree).context("open baseline worktree")?;
+        worktree_repo
+            .set_head_detached(head)
+            .context("detach baseline worktree head")?;
+        worktree_repo
+            .checkout_head(Some(CheckoutBuilder::new().force()))
+            .context("check out head in baseline worktree")?;
+
+        // Detached, so this moves nothing anyone else can see, and it's the same drop `apply`
+        // performs in place — a conflict fails inside the worktree, which the cleanup below
+        // discards, rather than leaving the user's branch sitting mid-rebase.
+        drop_notch_commits(&worktree_repo, &path, &config.release)
+            .context("drop notch commits in the baseline worktree")?;
+
+        ecosystem
+            .packages(&path)
+            .context("read packages from the baseline worktree")
+    })();
+
+    prune_worktree(repo, &worktree, &name);
+
+    packages.map(Some)
 }
 
-// Parses the `name@old->new` pairs back out of a `Notch-Bump` trailer. Cargo package names can't
-// contain `@` or `,` and a semver version can't contain `>`, so splitting on those is
-// unambiguous. A malformed entry is skipped rather than failing the run: the trailer is a
-// convenience for recovering a baseline, and a partial recovery still beats refusing to run.
-fn parse_bump_trailer(message: &str) -> Vec<(String, Version)> {
-    let prefix = format!("{NOTCH_TRAILER_KEY}: ");
-    let Some(line) = message.lines().find_map(|l| l.strip_prefix(&prefix)) else {
-        return Vec::new();
-    };
+/// Discards a throwaway worktree and the scratch branch `Repository::worktree` created alongside
+/// it. Best-effort and never fails the caller: the work it was created for has either already
+/// succeeded or already failed with a more useful error, and the only cost of a leaked worktree is
+/// a stale temp directory.
+pub fn prune_worktree(repo: &Repository, worktree: &Worktree, name: &str) {
+    let mut opts = WorktreePruneOptions::new();
+    opts.valid(true).working_tree(true);
 
-    line.split(',')
-        .filter_map(|entry| {
-            let (name, versions) = entry.trim().split_once('@')?;
-            let (old, _new) = versions.split_once("->")?;
-            Some((name.to_string(), Version::parse(old).ok()?))
-        })
-        .collect()
+    if let Err(e) = worktree.prune(Some(&mut opts)) {
+        warn!("could not prune worktree {name}: {e}");
+    }
+    if let Ok(mut branch) = repo.find_branch(name, BranchType::Local)
+        && let Err(e) = branch.delete()
+    {
+        warn!("could not delete scratch branch {name}: {e}");
+    }
 }
 
-/// Drops the branch's most recent notch commit, if one exists, by replaying every commit after it
-/// onto its own parent — the standard rebase idiom for removing a single commit from history.
-/// Meant to run before anything else in `commit::commit`, so changed-package detection, commit
-/// attribution, and the FSMs all see a clean slate instead of having to route around a stale
-/// notch commit sitting in the branch's history.
+/// Rewinds the branch to the state notch found it in, by rebasing away the bump commits it left
+/// behind on a previous run. Meant to run at the start of `apply` — the writing half — because it
+/// rewrites history; `plan` gets the same view without touching anything, via
+/// [`packages_without_prior_notch_commit`].
 pub fn drop_prior_notch_commit(repo: &Repository, config: &Config) -> Result<()> {
     // a stale local upstream ref would throw off both which commit range we search and, if we do
     // rebase, what we rebase onto — see `fetch_remote`
     fetch_remote(repo, config).context("fetch remote")?;
 
-    let commits = get_commits(repo, &config.release).context("get commits")?;
-    let Some(notch_commit) = find_last_notch_commit(&commits) else {
-        return Ok(());
+    drop_notch_commits(repo, Path::new("."), &config.release)
+}
+
+/// Rebases away *every* notch commit on the branch, in `dir`.
+///
+/// Every one, not just the most recent: a run interrupted between two of them leaves both, and
+/// dropping only the last would leave the first's bump standing and then bump on top of it —
+/// double-counting the release. One pass drops one commit, so the loop runs until none are left.
+///
+/// Shared by the in-place drop and the throwaway-worktree one precisely so those two can't drift:
+/// `plan` predicts what `apply` will do only for as long as they agree on what "without notch's
+/// prior bump" means.
+fn drop_notch_commits(repo: &Repository, dir: &Path, release: &ReleaseConfig) -> Result<()> {
+    // Bounded by how many are there to begin with. Each pass should remove exactly one, so this is
+    // only ever a backstop — but it's the difference between a rebase that silently no-ops and an
+    // infinite loop.
+    let mut passes = {
+        let commits = get_commits(repo, release).context("get commits")?;
+        commits.iter().filter(|c| is_notch_commit(c)).count()
     };
 
-    run_command(&[
-        "git",
-        "rebase",
-        "--onto",
-        &format!("{}^", notch_commit.id()),
-        &notch_commit.id().to_string(),
-    ])
-    .context("rebase away the prior notch commit")?;
+    while passes > 0 {
+        let target = {
+            let commits = get_commits(repo, release).context("get commits")?;
+            let Some(commit) = find_last_notch_commit(&commits) else {
+                return Ok(());
+            };
+            commit.id()
+        };
+
+        run_command_in(
+            dir,
+            &[
+                "git",
+                "rebase",
+                "--onto",
+                &format!("{target}^"),
+                &target.to_string(),
+            ],
+        )
+        .context("rebase away a prior notch commit")?;
+
+        passes -= 1;
+    }
 
     Ok(())
 }
@@ -246,6 +310,7 @@ pub fn push_current_branch(repo: &Repository, config: &Config) -> Result<()> {
 mod tests {
     use super::*;
     use crate::utils::package::Package;
+    use crate::utils::packages::CargoEcosystem;
     use cargo_metadata::semver::Version;
     use git2::Oid;
     use std::fs;
@@ -319,6 +384,45 @@ mod tests {
             .unwrap();
 
         (repo, base)
+    }
+
+    // Commits whatever is already on disk under `paths` — unlike `commit_onto`, which writes the
+    // commit message into the file it then commits, and so can't be used to stage a real manifest.
+    fn commit_paths(
+        repo: &Repository,
+        sig: &Signature,
+        message: &str,
+        paths: &[&str],
+        parent: Option<Oid>,
+    ) -> Oid {
+        let mut index = repo.index().unwrap();
+        for path in paths {
+            index.add_path(Path::new(path)).unwrap();
+        }
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+
+        let parents: Vec<Commit> = parent
+            .into_iter()
+            .map(|p| repo.find_commit(p).unwrap())
+            .collect();
+        let parent_refs: Vec<&Commit> = parents.iter().collect();
+
+        repo.commit(Some("HEAD"), sig, sig, message, &tree, &parent_refs)
+            .unwrap()
+    }
+
+    // A minimal but real crate, so `cargo metadata` can resolve it inside the baseline worktree.
+    fn write_crate(dir: &Path, version: &str) {
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/lib.rs"), "").unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"baseline-test-crate\"\nversion = \"{version}\"\nedition = \"2021\"\n"
+            ),
+        )
+        .unwrap();
     }
 
     fn notch_commit_message(name: &str, from: (u64, u64, u64), to: Version) -> String {
@@ -423,6 +527,118 @@ mod tests {
         let _ = fs::remove_dir_all(repo.workdir().unwrap());
     }
 
+    // The core of the non-destructive plan: the branch still carries notch's bump to 1.1.0, but
+    // the baseline read has to come back with 1.0.0 — and the branch has to be exactly where it
+    // was afterwards, which is what separates this from `drop_prior_notch_commit`.
+    #[test]
+    fn the_baseline_read_sees_past_a_prior_bump_without_moving_the_branch() {
+        let (repo, base) = repo_with_upstream("baseline-worktree");
+        let workdir = repo.workdir().unwrap().to_path_buf();
+        let human = Signature::now("a human", "human@example.com").unwrap();
+
+        write_crate(&workdir, "1.0.0");
+        let released = commit_paths(
+            &repo,
+            &human,
+            "feat: a thing",
+            &["Cargo.toml", "src/lib.rs"],
+            Some(base),
+        );
+
+        // notch's own bump, exactly as `apply` would leave it: manifest at 1.1.0 on disk
+        write_crate(&workdir, "1.1.0");
+        let message = notch_commit_message("baseline-test-crate", (1, 0, 0), Version::new(1, 1, 0));
+        let bumped = commit_paths(
+            &repo,
+            &notch_signature().unwrap(),
+            &message,
+            &["Cargo.toml"],
+            Some(released),
+        );
+
+        let packages =
+            packages_without_prior_notch_commit(&repo, &Config::default(), &CargoEcosystem)
+                .unwrap()
+                .expect("a notch commit is on the branch");
+
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].version, Version::new(1, 0, 0));
+
+        // the branch, and the working tree it points at, are untouched
+        assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().id(), bumped);
+        let on_disk = fs::read_to_string(workdir.join("Cargo.toml")).unwrap();
+        assert!(on_disk.contains("version = \"1.1.0\""), "got: {on_disk}");
+
+        let _ = fs::remove_dir_all(&workdir);
+    }
+
+    // No notch commit means the working tree already is the baseline, so no worktree is created
+    // and the caller is told to read it directly.
+    #[test]
+    fn the_baseline_read_declines_when_there_is_no_prior_bump() {
+        let (repo, base) = repo_with_upstream("baseline-none");
+        let workdir = repo.workdir().unwrap().to_path_buf();
+        let human = Signature::now("a human", "human@example.com").unwrap();
+
+        write_crate(&workdir, "1.0.0");
+        commit_paths(
+            &repo,
+            &human,
+            "feat: a thing",
+            &["Cargo.toml", "src/lib.rs"],
+            Some(base),
+        );
+
+        let packages =
+            packages_without_prior_notch_commit(&repo, &Config::default(), &CargoEcosystem)
+                .unwrap();
+
+        assert!(packages.is_none());
+
+        let _ = fs::remove_dir_all(&workdir);
+    }
+
+    // Two notch commits stack up when a run is interrupted between them. Dropping only the most
+    // recent would leave the first bump standing and then bump on top of it, double-counting the
+    // release — so every notch commit has to go, not just the one `find_last_notch_commit` names.
+    #[test]
+    fn every_stacked_notch_commit_is_dropped_not_just_the_most_recent() {
+        let (repo, base) = repo_with_upstream("drop-stacked");
+        let sig = notch_signature().unwrap();
+        let workdir = repo.workdir().unwrap().to_path_buf();
+
+        let first = notch_commit_message("foo", (1, 0, 0), Version::new(1, 1, 0));
+        let first = commit_onto(&repo, &sig, &first, "b.txt", Some(base));
+        let second = notch_commit_message("foo", (1, 1, 0), Version::new(1, 2, 0));
+        commit_onto(&repo, &sig, &second, "c.txt", Some(first));
+
+        drop_notch_commits(&repo, &workdir, &ReleaseConfig::default()).unwrap();
+
+        let commits = get_commits(&repo, &ReleaseConfig::default()).unwrap();
+        assert!(
+            !commits.iter().any(is_notch_commit),
+            "notch commits left on the branch: {commits:?}"
+        );
+
+        let _ = fs::remove_dir_all(&workdir);
+    }
+
+    // The other half of the same contract: a branch notch has never touched must come back
+    // untouched, without a stray rebase moving commits around for no reason.
+    #[test]
+    fn a_branch_with_no_notch_commit_is_left_exactly_as_it_was() {
+        let (repo, base) = repo_with_upstream("drop-none");
+        let human = Signature::now("a human", "human@example.com").unwrap();
+        let head = commit_onto(&repo, &human, "fix: something", "b.txt", Some(base));
+        let workdir = repo.workdir().unwrap().to_path_buf();
+
+        drop_notch_commits(&repo, &workdir, &ReleaseConfig::default()).unwrap();
+
+        assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().id(), head);
+
+        let _ = fs::remove_dir_all(&workdir);
+    }
+
     #[test]
     fn find_last_notch_commit_picks_the_one_closest_to_head() {
         let updated = vec![updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0))];
@@ -477,96 +693,5 @@ mod tests {
         assert_eq!(found.id(), third_oid);
 
         let _ = fs::remove_dir_all(repo.workdir().unwrap());
-    }
-
-    // A dry run can't drop the prior notch commit the way a real run does, so it has to recover
-    // each package's pre-bump version some other way. The commit's own trailer already records
-    // it — without this, discovery reads the bumped version off the working tree and bumps again
-    // on top of it.
-    #[test]
-    fn prior_notch_state_recovers_the_pre_bump_baseline_from_the_trailer() {
-        let (repo, base) = repo_with_upstream("prior-baseline");
-        let message = notch_commit_message("foo", (1, 0, 0), Version::new(1, 1, 0));
-        let notch = commit_onto(
-            &repo,
-            &notch_signature().unwrap(),
-            &message,
-            "b.txt",
-            Some(base),
-        );
-
-        let state = prior_notch_state(&repo, &Config::default())
-            .unwrap()
-            .expect("a notch commit is on the branch");
-
-        assert_eq!(state.commit, notch.to_string()[..7]);
-        assert_eq!(state.baseline.get("foo"), Some(&Version::new(1, 0, 0)));
-
-        let _ = fs::remove_dir_all(repo.workdir().unwrap());
-    }
-
-    // Two notch commits can stack up if a run is interrupted between them. The baseline has to be
-    // the *oldest* recorded `old` — taking the newest (1.1.0) would silently keep the first bump
-    // and apply the new one on top of it.
-    #[test]
-    fn stacked_notch_commits_report_the_oldest_recorded_baseline() {
-        let (repo, base) = repo_with_upstream("prior-stacked");
-        let sig = notch_signature().unwrap();
-
-        let first = notch_commit_message("foo", (1, 0, 0), Version::new(1, 1, 0));
-        let first = commit_onto(&repo, &sig, &first, "b.txt", Some(base));
-        let second = notch_commit_message("foo", (1, 1, 0), Version::new(1, 2, 0));
-        commit_onto(&repo, &sig, &second, "c.txt", Some(first));
-
-        let state = prior_notch_state(&repo, &Config::default())
-            .unwrap()
-            .expect("notch commits are on the branch");
-
-        assert_eq!(state.baseline.get("foo"), Some(&Version::new(1, 0, 0)));
-
-        let _ = fs::remove_dir_all(repo.workdir().unwrap());
-    }
-
-    #[test]
-    fn a_branch_with_no_notch_commit_has_no_prior_state() {
-        let (repo, base) = repo_with_upstream("prior-none");
-        let human = Signature::now("a human", "human@example.com").unwrap();
-        commit_onto(&repo, &human, "fix: something", "b.txt", Some(base));
-
-        assert!(
-            prior_notch_state(&repo, &Config::default())
-                .unwrap()
-                .is_none()
-        );
-
-        let _ = fs::remove_dir_all(repo.workdir().unwrap());
-    }
-
-    #[test]
-    fn a_trailer_survives_the_round_trip_through_build_and_parse() {
-        let updated = vec![
-            updated_crate("foo", (1, 0, 0), Version::new(1, 1, 0)),
-            updated_crate("bar", (0, 4, 2), Version::new(0, 5, 0)),
-        ];
-
-        let parsed = parse_bump_trailer(&build_bump_trailer(&updated));
-
-        assert_eq!(
-            parsed,
-            vec![
-                ("foo".to_string(), Version::new(1, 0, 0)),
-                ("bar".to_string(), Version::new(0, 4, 2)),
-            ]
-        );
-    }
-
-    // The trailer is a convenience, not a contract with anything outside notch — a mangled entry
-    // shouldn't take the whole run down with it.
-    #[test]
-    fn a_malformed_trailer_entry_is_skipped_rather_than_failing() {
-        let parsed =
-            parse_bump_trailer("Notch-Bump: foo@1.0.0->1.1.0,garbage,bar@notaversion->1.0.0");
-
-        assert_eq!(parsed, vec![("foo".to_string(), Version::new(1, 0, 0))]);
     }
 }

@@ -24,7 +24,7 @@ pub fn run(auto: bool, dry_run: bool) -> Result<()> {
     // The token check above still applies — a real run needs it, so failing fast on a missing one
     // is more useful than reporting a plan that couldn't have been carried out anyway.
     if dry_run {
-        if let Some(plan) = commit::plan(&config, auto, true).context("plan the release")? {
+        if let Some(plan) = commit::plan(&config, auto).context("plan the release")? {
             commit::describe(&plan);
             println!(
                 "would then push the current branch to {} and open a release PR against {}",
@@ -34,9 +34,12 @@ pub fn run(auto: bool, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    let Some((repo, res)) = commit::commit(&config, auto).context("run commit")? else {
+    // the same two halves `notch commit` runs, just with a push and a PR on the end — see
+    // `commit::plan` / `commit::apply`
+    let Some(plan) = commit::plan(&config, auto).context("plan the release")? else {
         return Ok(());
     };
+    let (repo, res) = commit::apply(&config, plan).context("apply the release")?;
 
     // push to the remote
     push_current_branch(&repo, &config).context("push current branch")?;
