@@ -34,9 +34,9 @@ pub fn run() -> Result<()> {
     }
 
     match cli.command {
-        Commands::Pr { auto } => pr::run(auto).context("run pr"),
+        Commands::Pr { auto, dry_run } => pr::run(auto, dry_run).context("run pr"),
         Commands::Tag { old, new } => tag::run(&old, &new).context("run tag"),
         Commands::Init {} => init::run().context("init notch"),
-        Commands::Commit { auto } => commit::run(auto).context("run commit"),
+        Commands::Commit { auto, dry_run } => commit::run(auto, dry_run).context("run commit"),
     }
 }

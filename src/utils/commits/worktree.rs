@@ -1,7 +1,7 @@
 use crate::config::{Config, ReleaseConfig};
 use crate::error::{Error, Result};
 use crate::utils::commits::traits::{CommitInfo, PackageCommits};
-use crate::utils::git::remote_credentials;
+use crate::utils::git::{is_notch_commit, remote_credentials};
 use crate::utils::package::Package;
 use anyhow::Context;
 use git2::{Commit, DiffOptions, FetchOptions, Oid, Repository, Sort};
@@ -151,7 +151,7 @@ fn get_changed_packages(
 
     let changed: HashSet<Package> = packages
         .into_iter()
-        .filter(|p| p.path == "." || files.iter().any(|f| f.starts_with(&p.path)))
+        .filter(|p| files.iter().any(|f| p.tracks(f)))
         .collect();
 
     for package in &changed {
@@ -180,6 +180,15 @@ fn attribute_commits_to_packages(
             continue;
         }
 
+        // notch's own bump commit is bookkeeping, not a change to the package. A normal run has
+        // already dropped it by this point, but a dry run deliberately leaves it in place — and
+        // it touches every manifest and changelog it bumped, so without this it gets attributed
+        // to all of them and, as a `chore` that matches nothing more specific, suggests a
+        // spurious patch bump on top of the real one.
+        if is_notch_commit(commit) {
+            continue;
+        }
+
         let parent_commit = commit.parent(0).context("get first parent")?;
         let cur_tree = commit.tree().context("get tree for current commit")?;
         let parent_tree = parent_commit.tree().context("get tree for parent commit")?;
@@ -197,7 +206,7 @@ fn attribute_commits_to_packages(
             .collect();
 
         for (package, package_commits) in &mut attributed {
-            if package.path == "." || files.iter().any(|f| f.starts_with(&package.path)) {
+            if files.iter().any(|f| package.tracks(f)) {
                 package_commits.push(commit.into());
             }
         }
@@ -272,11 +281,36 @@ mod tests {
     }
 
     fn package(path: &str) -> Package {
-        Package {
-            path: path.to_string(),
-            name: path.replace('/', "-"),
-            version: Version::new(0, 1, 0),
-        }
+        Package::new(
+            path.to_string(),
+            path.replace('/', "-"),
+            Version::new(0, 1, 0),
+            std::path::PathBuf::from(format!("{path}/Cargo.toml")),
+        )
+    }
+
+    // A notch bump commit: notch's own author identity plus the `Notch-Bump` trailer, which is
+    // what `is_notch_commit` keys off.
+    fn notch_commit_file(repo: &Repository, path: &str, parents: &[&Commit]) -> Oid {
+        let full_path = repo.workdir().unwrap().join(path);
+        fs::create_dir_all(full_path.parent().unwrap()).unwrap();
+        fs::write(&full_path, "bumped").unwrap();
+
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(path)).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+
+        let sig = crate::utils::git::notch_signature().unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "chore(notch): changelog + version bump\n\nNotch-Bump: crate-a@0.1.0->0.1.1",
+            &tree,
+            parents,
+        )
+        .unwrap()
     }
 
     fn cleanup(repo: &Repository) {
@@ -306,8 +340,30 @@ mod tests {
     }
 
     #[test]
-    fn root_package_is_always_considered_changed() {
+    fn a_root_package_is_changed_by_a_file_anywhere_in_the_repo() {
         let repo = init_repo("root-package");
+        let base = commit_file(&repo, "unrelated.txt", "x", &[]);
+        let base_commit = repo.find_commit(base).unwrap();
+        commit_file(&repo, "docs/guide.md", "hello", &[&base_commit]);
+
+        repo.reference("refs/remotes/origin/master", base, true, "test")
+            .unwrap();
+
+        let packages = HashSet::from([package(".")]);
+        let release = ReleaseConfig::default();
+
+        let changed = get_changed_packages(&repo, &release, packages).unwrap();
+
+        assert_eq!(changed, HashSet::from([package(".")]));
+        cleanup(&repo);
+    }
+
+    // The root package used to be short-circuited to "changed" without consulting the diff at all,
+    // so a branch identical to upstream still cut it a release with nothing in it. It owns every
+    // path in the repo, which is not the same as being changed by all of them.
+    #[test]
+    fn a_root_package_with_an_empty_diff_is_not_changed() {
+        let repo = init_repo("root-package-unchanged");
         let base = commit_file(&repo, "unrelated.txt", "x", &[]);
 
         // HEAD == upstream, so the diff between them is empty
@@ -319,7 +375,31 @@ mod tests {
 
         let changed = get_changed_packages(&repo, &release, packages).unwrap();
 
-        assert_eq!(changed, HashSet::from([package(".")]));
+        assert!(changed.is_empty(), "got: {changed:?}");
+        cleanup(&repo);
+    }
+
+    // A workspace root that is also a package owns the whole repo, so without the exclusion its
+    // members' changes are indistinguishable from its own and every member bump drags the root
+    // along with it.
+    #[test]
+    fn a_root_package_is_not_changed_by_a_member_it_excludes() {
+        let repo = init_repo("root-excludes-member");
+        let base = commit_file(&repo, "unrelated.txt", "x", &[]);
+        let base_commit = repo.find_commit(base).unwrap();
+        commit_file(&repo, "crates/a/src/lib.rs", "fn a() {}", &[&base_commit]);
+
+        repo.reference("refs/remotes/origin/master", base, true, "test")
+            .unwrap();
+
+        let mut root = package(".");
+        root.paths.exclude("crates/a");
+        let packages = HashSet::from([root, package("crates/a")]);
+        let release = ReleaseConfig::default();
+
+        let changed = get_changed_packages(&repo, &release, packages).unwrap();
+
+        assert_eq!(changed, HashSet::from([package("crates/a")]));
         cleanup(&repo);
     }
 
@@ -395,6 +475,37 @@ mod tests {
         let attributed = attribute_commits_to_packages(&repo, &commits, changed).unwrap();
 
         assert_eq!(attributed[&package(".")].len(), 2);
+        cleanup(&repo);
+    }
+
+    // A dry run leaves the prior notch commit on the branch, and that commit touches the manifest
+    // and changelog of every package it bumped. Attributing it would show notch's own bookkeeping
+    // as a change to the package and — since `chore` matches nothing more specific and falls back
+    // to patch — suggest a spurious bump on top of the real one.
+    #[test]
+    fn notch_commits_are_excluded_from_attribution() {
+        let repo = init_repo("attribute-notch");
+        let base = commit_file(&repo, "crate-a/Cargo.toml", "a", &[]);
+        let base_commit = repo.find_commit(base).unwrap();
+        let real = commit_file(&repo, "crate-a/src/lib.rs", "fn a() {}", &[&base_commit]);
+        let real_commit = repo.find_commit(real).unwrap();
+        let bump = notch_commit_file(&repo, "crate-a/CHANGELOG.md", &[&real_commit]);
+
+        let commits = vec![
+            repo.find_commit(real).unwrap(),
+            repo.find_commit(bump).unwrap(),
+        ];
+        let changed = HashSet::from([package("crate-a")]);
+
+        let attributed = attribute_commits_to_packages(&repo, &commits, changed).unwrap();
+
+        let found = &attributed[&package("crate-a")];
+        assert_eq!(
+            found.len(),
+            1,
+            "notch's own commit was attributed: {found:?}"
+        );
+        assert_eq!(found[0].sha1, real.to_string(), "wrong commit survived");
         cleanup(&repo);
     }
 }

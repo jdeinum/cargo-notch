@@ -26,6 +26,11 @@ pub enum Commands {
         /// commits (see `[bumps]` in notch.toml)
         #[arg(long)]
         auto: bool,
+
+        /// Print what would be released without writing, committing, pushing, or opening a PR.
+        /// Leaves any prior notch commit on the branch in place.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Tag crates whose version changed between two commits
     Tag {
@@ -43,5 +48,10 @@ pub enum Commands {
     Commit {
         #[arg(long)]
         auto: bool,
+
+        /// Print what would be released without writing or committing anything. Leaves any prior
+        /// notch commit on the branch in place.
+        #[arg(long)]
+        dry_run: bool,
     },
 }

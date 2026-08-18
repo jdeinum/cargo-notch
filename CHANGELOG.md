@@ -1,3 +1,8 @@
+## [1.2.2](https://github.com/jdeinum/cargo-notch/compare/v1.2.1..1.2.2) - 2026-08-18
+
+### 🚜 Refactor
+
+- Ecosystem trait + dry-run + pathh globs - ([ecbb043](https://github.com/jdeinum/cargo-notch/commit/ecbb043a08ee7dd7b872e603845333c9549fd086))
 ## [1.2.1](https://github.com/jdeinum/cargo-notch/compare/v1.1.0..1.2.1) - 2026-08-17
 
 ### 📚 Documentation

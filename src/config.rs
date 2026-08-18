@@ -4,7 +4,7 @@ use config::{Environment, File, FileFormat};
 use git2::Repository;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use std::{io::Write, path::Path};
+use std::{collections::HashMap, io::Write, path::Path};
 use tracing::warn;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -13,6 +13,7 @@ pub struct Config {
     pub repo: RepoConfig,
     pub release: ReleaseConfig,
     pub bumps: BumpsConfig,
+    pub tracking: TrackingConfig,
 }
 
 impl Config {
@@ -126,6 +127,51 @@ impl Default for BumpsConfig {
     }
 }
 
+/// Narrows which files count as a change to a package, on top of what the
+/// [`Ecosystem`](crate::utils::packages::Ecosystem) already worked out from the workspace layout.
+/// The ecosystem can subtract a nested package from the one containing it, because that's
+/// derivable; it can't know that you don't want a `benches/` edit to cut a release. That's intent,
+/// and it has to be stated.
+///
+/// Every pattern is a path **relative to the package's own directory**, not to the repo. That's
+/// what lets `exclude = ["benches"]` mean "each package's own benches directory" without any glob
+/// syntax, keeping matching a plain component-wise prefix test (see
+/// [`PathSpec`](crate::utils::package::PathSpec)) rather than dragging in a glob matcher.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct TrackingConfig {
+    /// Applied to every package.
+    pub exclude: Vec<String>,
+    /// Puts a path back that a broader `exclude` covers — `exclude = ["tests"]` alongside
+    /// `include = ["tests/compat"]`. Not an allowlist: a package tracks its own directory by
+    /// default, so listing paths here narrows nothing on its own.
+    pub include: Vec<String>,
+    /// Applied to one package, keyed by the name its manifest declares. Adds to the lists above
+    /// rather than replacing them — those are a baseline, and a per-package override that silently
+    /// dropped them would be a trap.
+    pub packages: HashMap<String, PackageTracking>,
+}
+
+impl Default for TrackingConfig {
+    fn default() -> Self {
+        Self {
+            // notch writes this file itself during a bump. Its own commit is already filtered out
+            // of attribution by `is_notch_commit`, but a hand-edited changelog is not, and
+            // "editing the changelog releases a new version" is a surprise nobody wants.
+            exclude: vec!["CHANGELOG.md".to_string()],
+            include: Vec::new(),
+            packages: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct PackageTracking {
+    pub exclude: Vec<String>,
+    pub include: Vec<String>,
+}
+
 /// Loads config from `notch.toml` in `dir` (if present), then applies
 /// `NOTCH__`-prefixed environment variable overrides, e.g.
 /// `NOTCH__RELEASE__DEFAULT_BRANCH=main` overrides `[release] default_branch`.
@@ -199,6 +245,49 @@ fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
 mod tests {
     use super::*;
     use secrecy::ExposeSecret;
+
+    // `load()` serializes `Config::default()` to TOML and reads it back whenever no `notch.toml`
+    // exists, and `init` writes the same string to disk. TOML puts every table after every plain
+    // value, so a config struct that mixes an array in among the tables — or a `[tracking]` table
+    // whose own `exclude` array is declared after its `packages` sub-table — fails to serialize at
+    // all, taking down every run without a config file.
+    #[test]
+    fn the_default_config_survives_a_toml_round_trip() {
+        let serialized = toml::to_string(&Config::default()).unwrap();
+        let parsed: Config = toml::from_str(&serialized).unwrap();
+
+        assert_eq!(parsed.tracking.exclude, vec!["CHANGELOG.md".to_string()]);
+        assert!(parsed.tracking.packages.is_empty());
+    }
+
+    #[test]
+    fn per_package_tracking_deserializes_from_a_named_sub_table() {
+        let parsed: TrackingConfig = toml::from_str(
+            "exclude = [\"benches\"]\n\
+             \n\
+             [packages.crate-a]\n\
+             exclude = [\"fixtures\"]\n",
+        )
+        .unwrap();
+
+        assert_eq!(parsed.exclude, vec!["benches".to_string()]);
+        assert_eq!(
+            parsed.packages["crate-a"].exclude,
+            vec!["fixtures".to_string()]
+        );
+    }
+
+    #[test]
+    fn an_include_deserializes_alongside_the_exclude_it_carves_back_out_of() {
+        let parsed: TrackingConfig = toml::from_str(
+            "exclude = [\"tests\"]\n\
+             include = [\"tests/compat\"]\n",
+        )
+        .unwrap();
+
+        assert_eq!(parsed.exclude, vec!["tests".to_string()]);
+        assert_eq!(parsed.include, vec!["tests/compat".to_string()]);
+    }
 
     // Regression test for a bug where `token` was `#[serde(skip)]`, which skips both directions —
     // it wasn't just kept out of the serialized `notch.toml` (the intent), it also meant `token`
